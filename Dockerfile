@@ -171,24 +171,29 @@ RUN chmod -R a+rX,go-w /app
 # group/other write bits while keeping the installed CLI trees readable and
 # executable for uid 10001.
 #
-# The two --version calls are a build-time smoke check: they fail the build
+# The three --version calls are a build-time smoke check: they fail the build
 # loudly rather than ship an image where an agent is silently a stub. They run
 # under a throwaway HOME that is deleted in the same layer, together with any
 # /root/.claude, /root/.claude.json, /root/.gemini and /root/.npm residue.
 ARG CLAUDE_CODE_VERSION=2.1.236
 ARG GEMINI_CLI_VERSION=0.60.0
+ARG OPENCODE_VERSION=1.18.31
 RUN set -eu \
     && npm install -g --no-audit --no-fund \
         "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
         "@google/gemini-cli@${GEMINI_CLI_VERSION}" \
+	"opencode-ai@${OPENCODE_VERSION}" \
     && npm cache clean --force \
     && chmod -R a+rX,go-w \
         /usr/local/lib/node_modules/@anthropic-ai \
         /usr/local/lib/node_modules/@google \
+        /usr/local/lib/node_modules/opencode-ai \
     && mkdir -p /tmp/cli-smoke \
     && HOME=/tmp/cli-smoke claude --version \
     && HOME=/tmp/cli-smoke command -v gemini \
     && HOME=/tmp/cli-smoke gemini --version \
+    && HOME=/tmp/cli-smoke command -v opencode \
+    && HOME=/tmp/cli-smoke opencode --version \
     && rm -rf /tmp/cli-smoke /root/.claude /root/.claude.json /root/.gemini /root/.npm
 
 # aioncore writes aionui-backend.db, logs/, runtime/, builtin-skills/ and its
