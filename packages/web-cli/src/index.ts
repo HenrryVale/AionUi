@@ -1,5 +1,5 @@
-import { startWebHost, startStaticServer } from '@aionui/web-host';
-import type { WebHostHandle, StaticServerHandle } from '@aionui/web-host';
+import { startWebHost, startStaticServer, startTelegramTeamBridge } from '@aionui/web-host';
+import type { WebHostHandle, StaticServerHandle, TelegramTeamBridgeHandle } from '@aionui/web-host';
 import { setTimeout as delay } from 'node:timers/promises';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -54,6 +54,7 @@ const DEFAULT_PORT = 25808;
 const RESET_COMMAND = isPackaged ? 'aionui-web resetpass' : 'bun run resetpass';
 
 let currentHandle: WebHostHandle | StaticServerHandle | null = null;
+let teamBridge: TelegramTeamBridgeHandle | null = null;
 
 function parseArgs(argv: string[]): { command: string; flags: Map<string, string | true> } {
   const [command = 'start', ...rest] = argv;
@@ -240,6 +241,15 @@ async function runStart(flags: Map<string, string | true>): Promise<void> {
       }
     );
 
+    // Telegram → Team Mode bridge. Opt-in: returns null unless
+    // AIONUI_TEAM_TELEGRAM_ENABLED (and the rest of its env) is set. A failure
+    // here must never take down the WebUI, so it is best-effort.
+    try {
+      teamBridge = await startTelegramTeamBridge({ backendPort: handle.backendPort, env: process.env });
+    } catch (err) {
+      console.warn('[aionui-web] Telegram team bridge failed to start:', err);
+    }
+
     if (autoOpenBrowser) {
       const openResult = openBrowserUrl(handle.localUrl);
       if (openResult.ok) {
@@ -258,6 +268,13 @@ async function runStart(flags: Map<string, string | true>): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`\n[aionui-web] received ${signal}, stopping...`);
+    try {
+      if (teamBridge) await teamBridge.stop();
+    } catch (err) {
+      console.error('[aionui-web] Telegram team bridge stop failed:', err);
+    } finally {
+      teamBridge = null;
+    }
     try {
       if (currentHandle) await currentHandle.stop();
     } catch (err) {
@@ -397,6 +414,15 @@ Options for resetpass:
 Environment variables:
   AIONUI_PORT, AIONUI_ALLOW_REMOTE, AIONUI_DATA_DIR, AIONUI_LOG_DIR,
   AIONUI_BACKEND_BIN, AIONUI_OPEN_BROWSER
+
+Telegram -> Team Mode bridge (opt-in, off by default; uses a bot separate
+from AionCore's native Telegram channel):
+  AIONUI_TEAM_TELEGRAM_ENABLED           1|true|yes|on to enable
+  AIONUI_TEAM_TELEGRAM_BOT_TOKEN         bot token (env only, never persisted)
+  AIONUI_TEAM_TELEGRAM_TEAM_ID           existing team id to route messages to
+  AIONUI_TEAM_TELEGRAM_ALLOWED_CHAT_IDS  comma-separated chat id allowlist
+  AIONUI_TEAM_TELEGRAM_POLL_TIMEOUT_S    long-poll timeout (default 25)
+  AIONUI_TEAM_TELEGRAM_RUN_TIMEOUT_MS    max wait per team run (default 900000)
 `);
     return;
   }

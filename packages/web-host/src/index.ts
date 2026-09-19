@@ -16,6 +16,11 @@ export {
 } from './backend-launcher.js';
 export type { BackendDirConfig, BackendLaunchOptions, BackendHandle, BackendStartOptions } from './backend-launcher.js';
 
+// Telegram → Team Mode bridge (opt-in, off unless AIONUI_TEAM_TELEGRAM_ENABLED)
+export { startTelegramTeamBridge, stopTelegramTeamBridge } from './telegram-team/index.js';
+export type { StartTelegramTeamBridgeOptions } from './telegram-team/index.js';
+export type { TelegramTeamBridgeHandle, TelegramTeamConfig } from './telegram-team/types.js';
+
 /**
  * Start WebHost (main entry point).
  *
