@@ -25,6 +25,17 @@ import { matchesFilters, normalizeEntry, parentOf, sortEntries } from './webFsPi
 
 const LAST_DIR_KEY = 'aionui:web-fs-picker:last-dir';
 
+/**
+ * Stacking for the picker's overlay.
+ *
+ * The picker can be launched from a task modal (TeamCreateModal uses wrap 10000
+ * / mask 9999), and it must always end up on top of its opener: it is the modal
+ * the user is being asked to interact with. Both values sit just above that
+ * layer, mask below wrap so the picker's own dialog stays clickable.
+ */
+const PICKER_MASK_Z_INDEX = 10019;
+const PICKER_WRAP_Z_INDEX = 10020;
+
 type PickerProps = {
   options: ShowOpenOptions;
   onDone: (paths: string[] | undefined) => void;
@@ -153,6 +164,18 @@ export const WebFsPicker: React.FC<PickerProps> = ({ options, onDone }) => {
       autoFocus={false}
       focusLock
       style={{ width: 'calc(100vw - 32px)', maxWidth: 640 }}
+      // The picker is opened *from inside* another modal (New Team → Workspace
+      // → Select folder), whose wrapper sits at 10000 and mask at 9999 — see
+      // pages/team/components/TeamCreateModal.tsx. Arco assigns no automatic
+      // stacking between two independently mounted modals, so without these the
+      // picker renders behind its opener and cannot be used. Staying above the
+      // task-modal layer rather than raising it keeps the parent untouched.
+      maskStyle={{ zIndex: PICKER_MASK_Z_INDEX }}
+      wrapStyle={{ zIndex: PICKER_WRAP_Z_INDEX }}
+      // Restates Arco's own default. It is spelled out because the picker is
+      // mounted on a detached host (see showWebFsPicker) and must portal to the
+      // body no matter what container a future caller has in scope.
+      getPopupContainer={() => document.body}
       footer={
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <span
