@@ -20,15 +20,15 @@
 # initialises an empty one from the image directory, ownership and mode
 # included, and both /data and /home/aionui are built owned by that account.
 # /home/aionui is HOME, and holds the CLI agents' config and credentials
-# (~/.claude, ~/.codex) — mount it or every container restart logs you out.
+# (~/.claude, ~/.gemini) — mount it or recreating the container loses the login.
 #   docker run -d -p 25808:25808 \
 #       -v aionui-data:/data -v aionui-home:/home/aionui aionui-web
 #
 # Authentication. No account is authenticated and no credential is baked in at
 # build time. Log the agents in once, after deploying, against the running
-# container; the tokens land in the /home/aionui volume and persist:
+# container; the credentials land in the /home/aionui volume and persist:
 #   docker exec -it <container> claude /login
-#   docker exec -it <container> codex login
+#   docker exec -it <container> gemini          # then complete its sign-in flow
 #
 # A host bind mount keeps the host directory's own ownership — Docker never
 # rewrites it — so give it to 10001 once before the first start. This recipe
@@ -104,8 +104,9 @@ RUN mkdir -p /opt \
 # Node under bundled-aioncore/*/managed-resources/node for the CLIs it manages.
 # node:22-slim is still the base for two reasons: agent CLIs the user installs
 # into the container themselves (npx-based tools) find a node/npm on PATH, and
-# the Codex CLI preinstalled below needs a real `node` at RUNTIME, not just at
-# build time — see the CLI agents section for why.
+# the Gemini CLI preinstalled below needs a real `node` at RUNTIME, not just at
+# build time — see the CLI agents section for why. Gemini CLI declares
+# engines.node >=20, which node:22-slim satisfies.
 FROM node:22-slim AS runtime
 
 # officecli (the Office preview component, auto-installed at runtime by the
@@ -137,13 +138,13 @@ COPY --from=builder /opt/aionui-web/ /app/
 RUN chmod -R a+rX,go-w /app
 
 # ---- CLI agents -------------------------------------------------------------
-# Claude Code and Codex, installed from npm at PINNED versions — never "latest",
-# so rebuilding this Dockerfile yields the same two CLIs.
+# Claude Code and Gemini CLI, installed from npm at pinned top-level versions
+# rather than "latest", so rebuilds do not silently change the requested CLI
+# versions.
 #
-# Both are thin wrapper packages whose only dependencies are platform-specific
-# optionalDependencies pinned to the same exact version (Claude Code to
-# `<version>`, Codex via `npm:@openai/codex@<version>-linux-x64` aliases), so
-# nothing here resolves through a floating range at build time.
+# Keep lifecycle scripts and optional dependencies enabled as required by the
+# published packages. The smoke checks below verify that both installed entry
+# points actually execute before the image is accepted.
 #
 # Lifecycle scripts and optional dependencies must stay ENABLED here — the
 # opposite of the builder stage's --ignore-scripts policy — because the Claude
@@ -157,37 +158,38 @@ RUN chmod -R a+rX,go-w /app
 # Runtime dependency on node (answering "does this need npm/npx at runtime?"):
 #   - claude  → NO. After the postinstall, /usr/local/bin/claude is a symlink
 #               straight to an ELF binary. No Node process stays resident.
-#   - codex   → YES, `node` only (never npm/npx). Its bin is bin/codex.js, an
-#               ESM launcher that require.resolve()s the platform package and
-#               spawns the vendored ELF binary. Dropping node from the runtime
-#               image would break `codex` while leaving `claude` working.
+#   - gemini  → YES, `node` only (never npm/npx). Its bin is bundle/gemini.js,
+#               a bundled JS entry point run by node. Dropping node from the
+#               runtime image would break `gemini` while leaving `claude`
+#               working.
 #
 # No credentials are baked in and no account is authenticated during build; the
 # smoke check below runs under a throwaway HOME which is then deleted, so no
-# ~/.claude or ~/.codex from the build ever reaches the image.
+# ~/.claude or ~/.gemini from the build ever reaches the image.
 #
-# The chmod mirrors the /app treatment: npm preserves each tarball's own modes
-# and the Codex vendor binary ships world-writable, so drop the group/other
-# write bit while keeping the tree readable and executable for uid 10001.
+# The chmod mirrors the /app treatment: npm preserves package modes, so remove
+# group/other write bits while keeping the installed CLI trees readable and
+# executable for uid 10001.
 #
 # The two --version calls are a build-time smoke check: they fail the build
 # loudly rather than ship an image where an agent is silently a stub. They run
 # under a throwaway HOME that is deleted in the same layer, together with any
-# /root/.claude, /root/.claude.json, /root/.codex and /root/.npm residue.
+# /root/.claude, /root/.claude.json, /root/.gemini and /root/.npm residue.
 ARG CLAUDE_CODE_VERSION=2.1.236
-ARG CODEX_VERSION=0.151.0
+ARG GEMINI_CLI_VERSION=0.60.0
 RUN set -eu \
     && npm install -g --no-audit --no-fund \
         "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
-        "@openai/codex@${CODEX_VERSION}" \
+        "@google/gemini-cli@${GEMINI_CLI_VERSION}" \
     && npm cache clean --force \
     && chmod -R a+rX,go-w \
         /usr/local/lib/node_modules/@anthropic-ai \
-        /usr/local/lib/node_modules/@openai \
+        /usr/local/lib/node_modules/@google \
     && mkdir -p /tmp/cli-smoke \
     && HOME=/tmp/cli-smoke claude --version \
-    && HOME=/tmp/cli-smoke codex --version \
-    && rm -rf /tmp/cli-smoke /root/.claude /root/.claude.json /root/.codex /root/.npm
+    && HOME=/tmp/cli-smoke command -v gemini \
+    && HOME=/tmp/cli-smoke gemini --version \
+    && rm -rf /tmp/cli-smoke /root/.claude /root/.claude.json /root/.gemini /root/.npm
 
 # aioncore writes aionui-backend.db, logs/, runtime/, builtin-skills/ and its
 # internal secrets under /data — web-cli passes it as the backend's data, cache
@@ -201,8 +203,8 @@ RUN set -eu \
 RUN install -d -o 10001 -g 10001 -m 0700 /data
 
 # HOME doubles as the CLI agents' config root: Claude Code writes ~/.claude and
-# ~/.claude.json, Codex writes ~/.codex (its CODEX_HOME default). Those hold the
-# subscription credentials created by a post-deploy login, so the directory has
+# ~/.claude.json, Gemini CLI writes ~/.gemini. Those hold the subscription
+# credentials created by a post-deploy login, so the directory has
 # to be writable by the service account and has to survive container
 # replacement — hence the declared volume below.
 #
@@ -222,7 +224,9 @@ RUN install -d -o 10001 -g 10001 -m 0700 /home/aionui
 # CLI lives under /usr/local, which is root-owned while the service runs as
 # 10001, so a self-update could not succeed anyway — this turns a recurring
 # failed attempt into a no-op, and stops the image silently diverging from the
-# version this Dockerfile pins.
+# version this Dockerfile pins. It is Claude Code's own variable — no claim is
+# made that it affects the Gemini CLI, and no Gemini-specific workaround is
+# added here.
 ENV NODE_ENV=production \
     HOME=/home/aionui \
     DISABLE_AUTOUPDATER=1 \
@@ -231,7 +235,7 @@ ENV NODE_ENV=production \
     AIONUI_DATA_DIR=/data
 
 # /data        — SQLite database and backend state
-# /home/aionui — HOME: the CLI agents' config and credentials (~/.claude, ~/.codex)
+# /home/aionui — HOME: the CLI agents' config and credentials (~/.claude, ~/.gemini)
 # Mount both:  -v aionui-data:/data -v aionui-home:/home/aionui
 VOLUME ["/data", "/home/aionui"]
 
