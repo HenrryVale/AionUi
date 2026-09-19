@@ -1,7 +1,34 @@
-node_modules
+# Dependencies and build output — regenerated inside the image.
+**/node_modules
 out
+out-fast-builds
+dist
 dist-server
+dist-web-cli
+resources/bundled-aioncore
+
+# VCS, CI and local runtime state.
 .git
 .github
+.husky
 data
-*.log
+**/*.log
+
+# Large media that is documentation-only; the renderer build reads public/,
+# never resources/, and pack-web-cli.js only touches resources/bundled-aioncore.
+# Patterns are anchored at the context root unless prefixed with **/.
+**/*.gif
+**/*.mp4
+resources/*.png
+
+# Not part of the WebUI build graph.
+docs
+examples
+mobile
+tests
+homebrew
+.specify
+.claude
+.gemini
+.aionui
+CHANGELOG.md
