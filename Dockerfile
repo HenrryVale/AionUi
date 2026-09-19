@@ -16,10 +16,19 @@
 # ENV, which would persist in the image history:
 #   docker build --secret id=gh_token,env=GH_TOKEN -t aionui-web .
 #
-# Run. The service runs as uid/gid 10001, so prefer a named volume: Docker
+# Run. The service runs as uid/gid 10001, so prefer named volumes: Docker
 # initialises an empty one from the image directory, ownership and mode
-# included, and /data is built owned by that account.
-#   docker run -d -p 25808:25808 -v aionui-data:/data aionui-web
+# included, and both /data and /home/aionui are built owned by that account.
+# /home/aionui is HOME, and holds the CLI agents' config and credentials
+# (~/.claude, ~/.codex) — mount it or every container restart logs you out.
+#   docker run -d -p 25808:25808 \
+#       -v aionui-data:/data -v aionui-home:/home/aionui aionui-web
+#
+# Authentication. No account is authenticated and no credential is baked in at
+# build time. Log the agents in once, after deploying, against the running
+# container; the tokens land in the /home/aionui volume and persist:
+#   docker exec -it <container> claude /login
+#   docker exec -it <container> codex login
 #
 # A host bind mount keeps the host directory's own ownership — Docker never
 # rewrites it — so give it to 10001 once before the first start. This recipe
@@ -93,8 +102,10 @@ RUN mkdir -p /opt \
 # ---- Runtime ----------------------------------------------------------------
 # The WebUI binary embeds its own bun runtime, and aioncore ships a managed
 # Node under bundled-aioncore/*/managed-resources/node for the CLIs it manages.
-# node:22-slim is still the base so that agent CLIs the user installs into the
-# container themselves (npx-based tools) find a node/npm on PATH.
+# node:22-slim is still the base for two reasons: agent CLIs the user installs
+# into the container themselves (npx-based tools) find a node/npm on PATH, and
+# the Codex CLI preinstalled below needs a real `node` at RUNTIME, not just at
+# build time — see the CLI agents section for why.
 FROM node:22-slim AS runtime
 
 # officecli (the Office preview component, auto-installed at runtime by the
@@ -125,6 +136,59 @@ COPY --from=builder /opt/aionui-web/ /app/
 # assets. Neither widens access the way a blanket 0777 would.
 RUN chmod -R a+rX,go-w /app
 
+# ---- CLI agents -------------------------------------------------------------
+# Claude Code and Codex, installed from npm at PINNED versions — never "latest",
+# so rebuilding this Dockerfile yields the same two CLIs.
+#
+# Both are thin wrapper packages whose only dependencies are platform-specific
+# optionalDependencies pinned to the same exact version (Claude Code to
+# `<version>`, Codex via `npm:@openai/codex@<version>-linux-x64` aliases), so
+# nothing here resolves through a floating range at build time.
+#
+# Lifecycle scripts and optional dependencies must stay ENABLED here — the
+# opposite of the builder stage's --ignore-scripts policy — because the Claude
+# Code wrapper's postinstall (install.cjs) is what puts the CLI in place: it
+# hardlinks the native binary out of the already-downloaded
+# @anthropic-ai/claude-code-linux-x64 package over a placeholder stub. It makes
+# NO network calls, so the step stays reproducible and offline once the registry
+# fetch is done. With --ignore-scripts or --omit=optional you get a stub that
+# only prints install instructions.
+#
+# Runtime dependency on node (answering "does this need npm/npx at runtime?"):
+#   - claude  → NO. After the postinstall, /usr/local/bin/claude is a symlink
+#               straight to an ELF binary. No Node process stays resident.
+#   - codex   → YES, `node` only (never npm/npx). Its bin is bin/codex.js, an
+#               ESM launcher that require.resolve()s the platform package and
+#               spawns the vendored ELF binary. Dropping node from the runtime
+#               image would break `codex` while leaving `claude` working.
+#
+# No credentials are baked in and no account is authenticated during build; the
+# smoke check below runs under a throwaway HOME which is then deleted, so no
+# ~/.claude or ~/.codex from the build ever reaches the image.
+#
+# The chmod mirrors the /app treatment: npm preserves each tarball's own modes
+# and the Codex vendor binary ships world-writable, so drop the group/other
+# write bit while keeping the tree readable and executable for uid 10001.
+#
+# The two --version calls are a build-time smoke check: they fail the build
+# loudly rather than ship an image where an agent is silently a stub. They run
+# under a throwaway HOME that is deleted in the same layer, together with any
+# /root/.claude, /root/.claude.json, /root/.codex and /root/.npm residue.
+ARG CLAUDE_CODE_VERSION=2.1.236
+ARG CODEX_VERSION=0.151.0
+RUN set -eu \
+    && npm install -g --no-audit --no-fund \
+        "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+        "@openai/codex@${CODEX_VERSION}" \
+    && npm cache clean --force \
+    && chmod -R a+rX,go-w \
+        /usr/local/lib/node_modules/@anthropic-ai \
+        /usr/local/lib/node_modules/@openai \
+    && mkdir -p /tmp/cli-smoke \
+    && HOME=/tmp/cli-smoke claude --version \
+    && HOME=/tmp/cli-smoke codex --version \
+    && rm -rf /tmp/cli-smoke /root/.claude /root/.claude.json /root/.codex /root/.npm
+
 # aioncore writes aionui-backend.db, logs/, runtime/, builtin-skills/ and its
 # internal secrets under /data — web-cli passes it as the backend's data, cache
 # and work dir, and spawns the backend with /data as its cwd — so the directory
@@ -136,17 +200,40 @@ RUN chmod -R a+rX,go-w /app
 # empty volume from this directory's ownership and mode.
 RUN install -d -o 10001 -g 10001 -m 0700 /data
 
+# HOME doubles as the CLI agents' config root: Claude Code writes ~/.claude and
+# ~/.claude.json, Codex writes ~/.codex (its CODEX_HOME default). Those hold the
+# subscription credentials created by a post-deploy login, so the directory has
+# to be writable by the service account and has to survive container
+# replacement — hence the declared volume below.
+#
+# `useradd --create-home` already made it, but its mode comes from
+# /etc/login.defs HOME_MODE and would drift with the base image; restate it so
+# the build is deterministic. 0700 keeps those credentials private to uid 10001.
+#
+# Same ordering rule as /data: this must come BEFORE the VOLUME instruction,
+# because a later layer's changes to a declared volume path are discarded.
+RUN install -d -o 10001 -g 10001 -m 0700 /home/aionui
+
 # HOME is set explicitly: with a numeric USER, Docker would otherwise leave it
 # at "/", which the service account cannot write, breaking any agent CLI that
 # expects a usable home.
+#
+# DISABLE_AUTOUPDATER keeps the pinned Claude Code version authoritative. The
+# CLI lives under /usr/local, which is root-owned while the service runs as
+# 10001, so a self-update could not succeed anyway — this turns a recurring
+# failed attempt into a no-op, and stops the image silently diverging from the
+# version this Dockerfile pins.
 ENV NODE_ENV=production \
     HOME=/home/aionui \
+    DISABLE_AUTOUPDATER=1 \
     AIONUI_PORT=25808 \
     AIONUI_ALLOW_REMOTE=true \
     AIONUI_DATA_DIR=/data
 
-# SQLite data volume — mount with: -v aionui-data:/data
-VOLUME ["/data"]
+# /data        — SQLite database and backend state
+# /home/aionui — HOME: the CLI agents' config and credentials (~/.claude, ~/.codex)
+# Mount both:  -v aionui-data:/data -v aionui-home:/home/aionui
+VOLUME ["/data", "/home/aionui"]
 
 # Above 1024, so the unprivileged account can bind it without CAP_NET_BIND_SERVICE.
 EXPOSE 25808
