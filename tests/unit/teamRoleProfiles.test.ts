@@ -340,6 +340,28 @@ describe('team role profiles', () => {
     );
   });
 
+  it('matches the vendored skill-design role manifest exactly', () => {
+    const snapshot = JSON.parse(
+      fs.readFileSync(
+        'packages/desktop/src/renderer/pages/team/components/memberPicker/teamRoleSkillPolicy.snapshot.json',
+        'utf8'
+      )
+    ) as {
+      roles: Record<string, { curated: string[] }>;
+      automaticRiskPolicy: { explicitlyDeniedSkills: string[] };
+    };
+
+    for (const [role, policy] of Object.entries(snapshot.roles)) {
+      expect(TEAM_ROLE_SKILL_POLICIES[role as keyof typeof TEAM_ROLE_SKILL_POLICIES].skills).toEqual(
+        policy.curated
+      );
+    }
+
+    expect(snapshot.automaticRiskPolicy.explicitlyDeniedSkills.sort()).toEqual(
+      ['canvas-design', 'design-taste-frontend', 'webapp-testing'].sort()
+    );
+  });
+
   it('selects only exact allowlisted skills in policy order', () => {
     expect(resolveTeamRoleSkills('qa', skills).map((skill) => skill.name)).toEqual(['ship-gate']);
     expect(resolveTeamRoleSkills('security', skills).map((skill) => skill.name)).toEqual([
