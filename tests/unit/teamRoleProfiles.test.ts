@@ -185,7 +185,7 @@ describe('team role profiles', () => {
         enabled_skills: ['testing'],
         defaults: expect.objectContaining({
           model: { mode: 'fixed', value: 'claude-sonnet' },
-          permission: { mode: 'fixed', value: 'yolo' },
+          permission: { mode: 'fixed', value: 'plan' },
           skills: { mode: 'fixed', value: ['testing'] },
         }),
       })
