@@ -1,5 +1,5 @@
 import { ipcBridge } from '@/common';
-import type { GetConfigOptionsResponse, SetConfigOptionResponse } from '@/common/types/platform/acpTypes';
+import type { TChatConversation } from '@/common/config/storage';
 import type { TTeam } from '@/common/types/team/teamTypes';
 import type { TeamRolePermissionMode } from './teamRoleProfiles';
 
@@ -10,44 +10,38 @@ export type TeamRolePermissionAssignment = {
 };
 
 export type TeamRolePermissionDeps = {
+  seedConversationMode: (conversationId: string, mode: TeamRolePermissionMode) => Promise<unknown>;
   ensureSession: (teamId: string) => Promise<unknown>;
-  getConfigOptions: (teamId: string, conversationId: string) => Promise<GetConfigOptionsResponse>;
-  setConfigOption: (
-    teamId: string,
-    conversationId: string,
-    optionId: string,
-    value: string
-  ) => Promise<SetConfigOptionResponse>;
 };
 
 const liveDeps: TeamRolePermissionDeps = {
-  ensureSession: (teamId) => ipcBridge.team.ensureSession.invoke({ team_id: teamId }),
-  getConfigOptions: (teamId, conversationId) =>
-    ipcBridge.team.getConfigOptions.invoke({ team_id: teamId, conversation_id: conversationId }),
-  setConfigOption: (teamId, conversationId, optionId, value) =>
-    ipcBridge.team.setConfigOption.invoke({
-      team_id: teamId,
-      conversation_id: conversationId,
-      option_id: optionId,
-      value,
+  seedConversationMode: (conversationId, mode) =>
+    ipcBridge.conversation.update.invoke({
+      id: conversationId,
+      updates: {
+        extra: { session_mode: mode } as TChatConversation['extra'],
+      } as Partial<TChatConversation>,
+      merge_extra: true,
     }),
+  ensureSession: (teamId) => ipcBridge.team.ensureSession.invoke({ team_id: teamId }),
 };
 
-function resolveModeOption(response: GetConfigOptionsResponse) {
-  return response.config_options.find(
-    (option) => option.category === 'mode' || option.id === 'mode'
-  );
-}
-
+/**
+ * Team creation persists every member conversation before any runtime must be
+ * started. Seed the role-specific permission mode into conversation.extra
+ * first, then start the Team session.
+ *
+ * This ordering is load-bearing: AionCore intentionally warms only the leader
+ * on initial Team startup; teammates stay dormant until work arrives. Trying to
+ * call config-options for a dormant teammate returns TEAM_RUNTIME_NOT_READY.
+ * The persisted session_mode is the value AionCore consumes when that member is
+ * lazily attached later, so no eager teammate wakeup is required.
+ */
 export async function enforceTeamRolePermissionModesWithDeps(
   team: TTeam,
   assignments: TeamRolePermissionAssignment[],
   deps: TeamRolePermissionDeps
 ): Promise<void> {
-  if (assignments.length === 0) return;
-
-  await deps.ensureSession(team.id);
-
   for (const assignment of assignments) {
     const member = team.assistants.find(
       (assistant) =>
@@ -60,27 +54,11 @@ export async function enforceTeamRolePermissionModesWithDeps(
       );
     }
 
-    const options = await deps.getConfigOptions(team.id, member.conversation_id);
-    const modeOption = resolveModeOption(options);
-    if (!modeOption) {
-      throw new Error(
-        `Permission mode option is unavailable for role member: ${assignment.assistantName}`
-      );
-    }
+    await deps.seedConversationMode(member.conversation_id, assignment.mode);
+  }
 
-    const availableModes = new Set(modeOption.options.map((option) => option.value));
-    if (!availableModes.has(assignment.mode)) {
-      throw new Error(
-        `Required permission mode "${assignment.mode}" is unavailable for ${assignment.assistantName}`
-      );
-    }
-
-    await deps.setConfigOption(
-      team.id,
-      member.conversation_id,
-      modeOption.id,
-      assignment.mode
-    );
+  if (assignments.length > 0) {
+    await deps.ensureSession(team.id);
   }
 }
 
