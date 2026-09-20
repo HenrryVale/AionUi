@@ -39,6 +39,34 @@
 #       chown 10001:10001 /data
 #
 ARG SKILL_DESIGN_COMMIT=75e78abdf42deee73cbe51199806afdb8eebf539
+ARG AIONCORE_COMMIT=47e66d0d151123e973b3fd1e77afcb5671b3f8c5
+
+# ---- Patched AionCore --------------------------------------------------------
+FROM rust:1.95.0-slim-bookworm AS aioncore-builder
+
+ARG AIONCORE_COMMIT
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       build-essential ca-certificates cmake git perl pkg-config python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src/aioncore
+RUN git init -q \
+    && git remote add origin https://github.com/iOfficeAI/AionCore.git \
+    && git fetch --depth 1 origin "$AIONCORE_COMMIT" \
+    && git checkout -q --detach FETCH_HEAD \
+    && test "$(git rev-parse HEAD)" = "$AIONCORE_COMMIT"
+
+COPY scripts/aioncore/patch-managed-skills.py /tmp/patch-managed-skills.py
+
+RUN python3 -m py_compile /tmp/patch-managed-skills.py \
+    && python3 /tmp/patch-managed-skills.py /src/aioncore \
+    && cargo test -p aionui-extension managed_skill_security_tests \
+    && cargo test -p aionui-db --test agent_skill_delivery_migration \
+    && cargo build --release -p aionui-app \
+    && test -x /src/aioncore/target/release/aioncore \
+    && /src/aioncore/target/release/aioncore --version
 
 # ---- Builder ----------------------------------------------------------------
 # node:22-slim satisfies package.json "engines" (node >=22 <25) and matches the
@@ -129,6 +157,13 @@ RUN mkdir -p /opt \
     && test -x /opt/aionui-web/bundled-aioncore/linux-x64/aioncore \
     && test -f /opt/aionui-web/static/index.html
 
+# Replace only the backend binary with our reproducibly patched AionCore.
+# The surrounding web-cli package/layout remains the official AionUi artifact.
+COPY --from=aioncore-builder /src/aioncore/target/release/aioncore /tmp/aioncore-managed-skills
+RUN install -m 0755 /tmp/aioncore-managed-skills \
+      /opt/aionui-web/bundled-aioncore/linux-x64/aioncore \
+    && /opt/aionui-web/bundled-aioncore/linux-x64/aioncore --version
+
 # ---- Runtime ----------------------------------------------------------------
 # The WebUI binary embeds its own bun runtime, and aioncore ships a managed
 # Node under bundled-aioncore/*/managed-resources/node for the CLIs it manages.
@@ -138,6 +173,8 @@ RUN mkdir -p /opt \
 # build time — see the CLI agents section for why. Gemini CLI declares
 # engines.node >=20, which node:22-slim satisfies.
 FROM node:22-slim AS runtime
+
+ARG SKILL_DESIGN_COMMIT
 
 # officecli (the Office preview component, auto-installed at runtime by the
 # backend) is a .NET binary that aborts on startup without ICU, and Debian
@@ -283,7 +320,8 @@ ENV NODE_ENV=production \
     DISABLE_AUTOUPDATER=1 \
     AIONUI_PORT=25808 \
     AIONUI_ALLOW_REMOTE=true \
-    AIONUI_DATA_DIR=/data
+    AIONUI_DATA_DIR=/data \
+    AIONUI_MANAGED_SKILLS_DIR=/app/team-skills/${SKILL_DESIGN_COMMIT}
 
 # /data        — SQLite database and backend state
 # /home/aionui — HOME: the CLI agents' config and credentials (~/.claude, ~/.gemini)
