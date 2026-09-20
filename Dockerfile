@@ -123,8 +123,17 @@ RUN --mount=type=secret,id=gh_token,required=true \
     mkdir -p /opt/skill-design; \
     git -C /opt/skill-design init -q; \
     git -C /opt/skill-design remote add origin https://github.com/HenrryVale/skill-design.git; \
-    git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $GH_AUTH" \
-      -C /opt/skill-design fetch --depth 1 origin "$SKILL_DESIGN_COMMIT"; \
+    FETCH_ATTEMPT=1; \
+    while :; do \
+      if git -c http.version=HTTP/1.1 \
+        -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $GH_AUTH" \
+        -C /opt/skill-design fetch --depth 1 origin "$SKILL_DESIGN_COMMIT"; then \
+        break; \
+      fi; \
+      test "$FETCH_ATTEMPT" -lt 3 || exit 1; \
+      FETCH_ATTEMPT=$((FETCH_ATTEMPT + 1)); \
+      sleep "$FETCH_ATTEMPT"; \
+    done; \
     unset GH_AUTH GH_TOKEN; \
     git -C /opt/skill-design checkout -q --detach FETCH_HEAD; \
     test "$(git -C /opt/skill-design rev-parse HEAD)" = "$SKILL_DESIGN_COMMIT"; \
