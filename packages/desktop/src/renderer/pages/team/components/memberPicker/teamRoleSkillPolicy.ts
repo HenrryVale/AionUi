@@ -18,7 +18,8 @@ export type TeamRoleSkillPolicy = {
  */
 export const TEAM_ROLE_SKILL_POLICY_SOURCE = {
   repository: 'HenrryVale/skill-design',
-  commit: '822cbc69081c4b7b9b35c75da1395e012a191369',
+  commit: '895e916d9c2becf662a2cab57a133a36212c1112',
+  rolePolicy: 'pack/aionui-team-roles.json',
   catalog: 'pack/skills.json',
   router: 'agent/router.yaml',
   map: 'agent/skill-map.yaml',
@@ -38,10 +39,11 @@ export const TEAM_ROLE_AUTO_BLOCKED_SKILLS = new Set([
 ]);
 
 /**
- * Static role catalogs. These are capability catalogs, not instructions to
- * invoke every skill on every task. The skill-design orchestrator (Frontend /
- * Full Stack) is responsible for choosing the smallest useful subset at task
- * time.
+ * Static role catalogs. These are capability surfaces, not instructions to
+ * invoke every skill on every task. Frontend intentionally exposes the audited
+ * UI/product toolbox from skill-design; the skill-design orchestrator is still
+ * responsible for selecting one primary capability, a small support set, and
+ * gates only when the task warrants them.
  *
  * Deliberately omitted:
  * - office/document/presentation skills unrelated to software roles;
@@ -57,10 +59,17 @@ export const TEAM_ROLE_SKILL_POLICIES: Record<
     skills: ['ship-gate'],
   },
   architect: {
-    skills: ['architecture', 'security-gate', 'ship-gate'],
+    skills: ['architecture', 'security-gate', 'prompt-injection-gate', 'ship-gate'],
   },
   backend: {
-    skills: ['testing', 'debug-gate', 'test-first-gate', 'security-gate', 'ship-gate'],
+    skills: [
+      'testing',
+      'debug-gate',
+      'test-first-gate',
+      'security-gate',
+      'prompt-injection-gate',
+      'ship-gate',
+    ],
   },
   frontend: {
     skills: [
@@ -69,18 +78,29 @@ export const TEAM_ROLE_SKILL_POLICIES: Record<
       'refactoring-ui',
       'ui-ux-pro-max',
       'ux-heuristics',
+      'web-typography',
+      'microinteractions',
+      'theme-factory',
       'web-motion-toolkit',
+      'web-artifact-builder',
+      'generative-art',
+      'business-identity-gate',
+      'prompt-injection-gate',
       'test-first-gate',
+      'security-gate',
       'ship-gate',
     ],
   },
   fullstack: {
     skills: [
+      'testing',
       'skill-design',
       'frontend-design',
+      'web-artifact-builder',
       'debug-gate',
       'test-first-gate',
       'security-gate',
+      'prompt-injection-gate',
       'ship-gate',
     ],
   },
@@ -91,7 +111,7 @@ export const TEAM_ROLE_SKILL_POLICIES: Record<
     skills: ['security-gate', 'prompt-injection-gate', 'ship-gate'],
   },
   devops: {
-    skills: ['debug-gate', 'security-gate', 'ship-gate'],
+    skills: ['debug-gate', 'security-gate', 'prompt-injection-gate', 'ship-gate'],
   },
   reviewer: {
     skills: ['architecture', 'testing', 'ship-gate'],
