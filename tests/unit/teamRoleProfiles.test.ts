@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
 import type { SkillInfo } from '@/renderer/pages/settings/AssistantSettings/types';
@@ -9,6 +10,7 @@ import {
   TEAM_ROLE_PROFILES,
 } from '@/renderer/pages/team/components/memberPicker/teamRoleProfiles';
 import {
+  TEAM_ROLE_SKILL_BUNDLE_ROOT,
   TEAM_ROLE_SKILL_POLICIES,
   TEAM_ROLE_SKILL_POLICY_SOURCE,
   teamRoleSkillBundlePath,
@@ -325,6 +327,19 @@ describe('team role profiles', () => {
     expect(TEAM_ROLE_SKILL_POLICY_SOURCE.rolePolicy).toBe('pack/aionui-team-roles.json');
   });
 
+  it('keeps the Docker bundle pin synchronized with the role policy', () => {
+    const dockerfile = fs.readFileSync('Dockerfile', 'utf8');
+    expect(dockerfile).toContain(
+      `ARG SKILL_DESIGN_COMMIT=${TEAM_ROLE_SKILL_POLICY_SOURCE.commit}`
+    );
+    expect(dockerfile).toContain(
+      'COPY --from=builder /opt/aionui-team-skills-versioned/ /app/team-skills/'
+    );
+    expect(TEAM_ROLE_SKILL_BUNDLE_ROOT).toBe(
+      `/app/team-skills/${TEAM_ROLE_SKILL_POLICY_SOURCE.commit}`
+    );
+  });
+
   it('selects only exact allowlisted skills in policy order', () => {
     expect(resolveTeamRoleSkills('qa', skills).map((skill) => skill.name)).toEqual(['ship-gate']);
     expect(resolveTeamRoleSkills('security', skills).map((skill) => skill.name)).toEqual([
@@ -470,6 +485,39 @@ describe('team role profiles', () => {
           importSkill: vi.fn(async () => ({ skill_name: 'ship-gate' })),
         })
       ).rejects.toThrow('Managed Team role skills are unavailable after import for qa: ship-gate');
+    });
+
+    it('single-flights concurrent imports of the same managed skill', async () => {
+      let availableCalls = 0;
+      const listAvailableSkills = vi.fn(async () => {
+        availableCalls += 1;
+        return availableCalls <= 2 ? [] : [shipGate];
+      });
+      let releaseImport!: (value: { skill_name: string }) => void;
+      const importSkill = vi.fn(
+        () =>
+          new Promise<{ skill_name: string }>((resolve) => {
+            releaseImport = resolve;
+          })
+      );
+      const deps = {
+        listAvailableSkills,
+        listSkillImportHistory: vi.fn(async () => []),
+        importSkill,
+      };
+
+      const first = ensureTeamRoleSkills('qa', deps);
+      const second = ensureTeamRoleSkills('qa', deps);
+
+      await vi.waitFor(() => {
+        expect(importSkill).toHaveBeenCalledOnce();
+      });
+      releaseImport({ skill_name: 'ship-gate' });
+
+      const [a, b] = await Promise.all([first, second]);
+      expect(a.map((skill) => skill.name)).toEqual(['ship-gate']);
+      expect(b.map((skill) => skill.name)).toEqual(['ship-gate']);
+      expect(importSkill).toHaveBeenCalledOnce();
     });
   });
 
