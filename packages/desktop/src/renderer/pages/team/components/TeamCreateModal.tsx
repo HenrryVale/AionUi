@@ -22,7 +22,11 @@ import {
   duplicateTeamMemberNames,
   nextAvailableTeamMemberName,
 } from './memberPicker/teamMemberIdentity';
-import { ensureTeamRoleAssistant, TEAM_ROLE_PROFILES } from './memberPicker/teamRoleProfiles';
+import {
+  ensureTeamDynamicRoleAssistants,
+  ensureTeamRoleAssistant,
+  TEAM_ROLE_PROFILES,
+} from './memberPicker/teamRoleProfiles';
 import { enforceTeamRolePermissionModes } from './memberPicker/teamRolePermissions';
 
 // [E2E SYNC] 修改此组件的 DOM 结构（class、标题、关闭按钮等）时，
@@ -141,6 +145,8 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
       const assistantIdBySelectionId = new Map<string, string>();
       const provisionedRoleIds = new Map<string, string>();
 
+      const pmBaseAssistantIds = new Set<string>();
+
       for (const member of selectedMembers) {
         if (member.specialty === 'general') {
           assistantIdBySelectionId.set(member.selectionId, member.assistant.id);
@@ -158,6 +164,19 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
           provisionedRoleIds.set(provisionKey, roleAssistantId);
         }
         assistantIdBySelectionId.set(member.selectionId, roleAssistantId);
+
+        if (member.specialty === 'pm') {
+          pmBaseAssistantIds.add(member.assistant.id);
+        }
+      }
+
+      // A PM can only delegate through assistant_id values exposed by
+      // team_list_assistants. Pre-provision the same base assistant's role
+      // variants before creating the team so dynamic delegation can select a
+      // real Full Stack / QA / Security / DevOps identity instead of silently
+      // falling back to the unrestricted bare assistant.
+      for (const baseAssistantId of pmBaseAssistantIds) {
+        await ensureTeamDynamicRoleAssistants(baseAssistantId);
       }
 
       const resolvedModels = await Promise.all(
