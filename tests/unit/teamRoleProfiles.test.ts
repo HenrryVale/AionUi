@@ -104,6 +104,13 @@ describe('team role profiles', () => {
     expect(TEAM_ROLE_PROFILES.reviewer.permissionMode).toBe('plan');
   });
 
+  it('keeps QA in plan mode and documents the fail-closed capability wall', () => {
+    expect(TEAM_ROLE_PROFILES.qa.permissionMode).toBe('plan');
+    expect(TEAM_ROLE_PROFILES.qa.rules).toContain('fail-closed capability wall');
+    expect(TEAM_ROLE_PROFILES.qa.rules).toContain('Never use Bash, Write, Edit, NotebookEdit, subagents');
+    expect(TEAM_ROLE_PROFILES.qa.rules).toContain('Do not retry the action through another tool');
+  });
+
   it('selects only real catalog skills relevant to a role', () => {
     expect(resolveTeamRoleSkills('qa', skills).map((skill) => skill.name)).toEqual(['testing']);
     expect(resolveTeamRoleSkills('security', skills).map((skill) => skill.name)).toEqual(['security-review']);
