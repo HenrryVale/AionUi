@@ -22,6 +22,7 @@ import {
   duplicateTeamMemberNames,
   nextAvailableTeamMemberName,
 } from './memberPicker/teamMemberIdentity';
+import { ensureTeamRoleAssistant } from './memberPicker/teamRoleProfiles';
 
 // [E2E SYNC] 修改此组件的 DOM 结构（class、标题、关闭按钮等）时，
 // 必须同步更新 tests/e2e/cases/teams/team-create.e2e.ts、team-whitelist.e2e.ts、
@@ -135,11 +136,34 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
     const user_id = user?.id ?? 'system_default_user';
     setLoading(true);
     try {
+      const assistantIdBySelectionId = new Map<string, string>();
+      const provisionedRoleIds = new Map<string, string>();
+
+      for (const member of selectedMembers) {
+        if (member.specialty === 'general') {
+          assistantIdBySelectionId.set(member.selectionId, member.assistant.id);
+          continue;
+        }
+
+        const provisionKey = `${member.assistant.id}::${member.specialty}`;
+        let roleAssistantId = provisionedRoleIds.get(provisionKey);
+        if (!roleAssistantId) {
+          const roleAssistant = await ensureTeamRoleAssistant({
+            baseAssistantId: member.assistant.id,
+            specialty: member.specialty,
+          });
+          roleAssistantId = roleAssistant.id;
+          provisionedRoleIds.set(provisionKey, roleAssistantId);
+        }
+        assistantIdBySelectionId.set(member.selectionId, roleAssistantId);
+      }
+
       const resolvedModels = await Promise.all(
         selectedMembers.map(async (member) => {
           try {
+            const assistantId = assistantIdBySelectionId.get(member.selectionId) ?? member.assistant.id;
             const model = await resolveDefaultTeamAgentModel({
-              assistant_id: member.assistant.id,
+              assistant_id: assistantId,
               assistant_backend: member.assistant.backend,
             });
             return [member.selectionId, model] as const;
@@ -154,7 +178,7 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
       const agents: TeamAssistantInput[] = selectedMembers.map((member) => ({
         role: member.selectionId === leaderSelectionId ? 'leader' : 'teammate',
         assistant_name: composeTeamMemberName(member.memberName, member.specialty),
-        assistant_id: member.assistant.id,
+        assistant_id: assistantIdBySelectionId.get(member.selectionId) ?? member.assistant.id,
         model: modelBySelectionId.get(member.selectionId),
       }));
 
