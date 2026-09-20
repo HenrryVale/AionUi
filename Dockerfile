@@ -11,9 +11,10 @@
 # Build (linux/amd64):
 #   docker build -t aionui-web .
 #
-# The aioncore download hits GitHub release assets anonymously. If the build
-# host is rate-limited, pass a token as a BuildKit secret — never as an ARG or
-# ENV, which would persist in the image history:
+# This image also stages the private HenrryVale/skill-design repository.
+# Pass a GitHub token with read access as a BuildKit secret — never as an ARG
+# or ENV, which would persist in image metadata/history. The same secret can
+# also authenticate the pinned AionCore release download when needed:
 #   docker build --secret id=gh_token,env=GH_TOKEN -t aionui-web .
 #
 # Run. The service runs as uid/gid 10001, so prefer named volumes: Docker
@@ -114,11 +115,17 @@ RUN bun install --frozen-lockfile --ignore-scripts
 # installs are pinned/audited; the staging script normalizes the skills CLI's
 # agent-specific layout into one flat bundle. This happens at image build time,
 # never from the mutable /workspace bind mount.
-RUN set -eu; \
+RUN --mount=type=secret,id=gh_token,required=true \
+    set -eu; \
+    GH_TOKEN="$(cat /run/secrets/gh_token)"; \
+    test -n "$GH_TOKEN"; \
+    GH_AUTH="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\\n')"; \
     mkdir -p /opt/skill-design; \
     git -C /opt/skill-design init -q; \
     git -C /opt/skill-design remote add origin https://github.com/HenrryVale/skill-design.git; \
-    git -C /opt/skill-design fetch --depth 1 origin "$SKILL_DESIGN_COMMIT"; \
+    git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $GH_AUTH" \
+      -C /opt/skill-design fetch --depth 1 origin "$SKILL_DESIGN_COMMIT"; \
+    unset GH_AUTH GH_TOKEN; \
     git -C /opt/skill-design checkout -q --detach FETCH_HEAD; \
     test "$(git -C /opt/skill-design rev-parse HEAD)" = "$SKILL_DESIGN_COMMIT"; \
     python3 /opt/skill-design/scripts/validate.py; \
