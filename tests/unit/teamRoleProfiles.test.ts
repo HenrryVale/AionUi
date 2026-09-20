@@ -42,7 +42,7 @@ const baseDetail = {
   prompts: { recommended: [], recommended_i18n: {} },
   defaults: {
     model: { mode: 'fixed', value: 'claude-sonnet' },
-    permission: { mode: 'fixed', value: 'yolo' },
+    permission: { mode: 'fixed', value: 'plan' },
     thought_level: { mode: 'auto' },
     skills: { mode: 'fixed', value: [] },
     mcps: { mode: 'auto', value: [] },
@@ -89,6 +89,19 @@ const skills: SkillInfo[] = [
 describe('team role profiles', () => {
   it('uses deterministic reusable assistant ids', () => {
     expect(teamRoleAssistantId('bare:claude', 'qa')).toBe('team-role:bare:claude:qa');
+  });
+
+  it('assigns execution policy by responsibility', () => {
+    expect(TEAM_ROLE_PROFILES.pm.permissionMode).toBe('bypassPermissions');
+    expect(TEAM_ROLE_PROFILES.backend.permissionMode).toBe('bypassPermissions');
+    expect(TEAM_ROLE_PROFILES.frontend.permissionMode).toBe('bypassPermissions');
+    expect(TEAM_ROLE_PROFILES.fullstack.permissionMode).toBe('bypassPermissions');
+    expect(TEAM_ROLE_PROFILES.devops.permissionMode).toBe('bypassPermissions');
+
+    expect(TEAM_ROLE_PROFILES.architect.permissionMode).toBe('plan');
+    expect(TEAM_ROLE_PROFILES.qa.permissionMode).toBe('plan');
+    expect(TEAM_ROLE_PROFILES.security.permissionMode).toBe('plan');
+    expect(TEAM_ROLE_PROFILES.reviewer.permissionMode).toBe('plan');
   });
 
   it('selects only real catalog skills relevant to a role', () => {
