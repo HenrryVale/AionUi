@@ -361,13 +361,13 @@ mod managed_skill_security_tests {
     if migration.exists():
         fail("migration 044 already exists")
     migration.write_text(
-        "-- HenrryVale AionUi managed-skill hardening.\\n"
-        "-- Claude argv mode consumes a mutable /data/session-skills plugin view.\\n"
-        "-- Use safe injected dual-channel delivery instead.\\n"
-        "UPDATE agent_metadata SET\\n"
-        "    skill_delivery = '{\\"mode\\":\\"injected\\"}',\\n"
-        "    updated_at = CAST(strftime('%s','now') AS INTEGER) * 1000\\n"
-        "WHERE backend = 'claude';\\n",
+        "-- HenrryVale AionUi managed-skill hardening.\n"
+        "-- Claude argv mode consumes a mutable /data/session-skills plugin view.\n"
+        "-- Use safe injected dual-channel delivery instead.\n"
+        "UPDATE agent_metadata SET\n"
+        "    skill_delivery = '{\"mode\":\"injected\"}',\n"
+        "    updated_at = CAST(strftime('%s','now') AS INTEGER) * 1000\n"
+        "WHERE backend = 'claude';\n",
         encoding="utf-8",
     )
 
