@@ -39,7 +39,7 @@
 #   docker run --rm --user 0 -v "$(pwd)/data:/data" aionui-web \
 #       chown 10001:10001 /data
 #
-ARG SKILL_DESIGN_COMMIT=8fea33732ab971bcc5488694de0f2cd99673244e
+ARG SKILL_DESIGN_COMMIT=4ef1e1fc5222e596205ef383a128c181651350c5
 ARG AIONCORE_COMMIT=47e66d0d151123e973b3fd1e77afcb5671b3f8c5
 
 # ---- Patched AionCore --------------------------------------------------------
@@ -112,8 +112,8 @@ COPY packages/web-host/package.json ./packages/web-host/
 RUN bun install --frozen-lockfile --ignore-scripts
 
 # Curated Team role skills. The source repo and every upstream dependency it
-# installs are pinned/audited; the staging script normalizes the skills CLI's
-# agent-specific layout into one flat bundle. This happens at image build time,
+# installs are pinned/audited; the staging script downloads the exact audited
+# upstream commit archives and copies only the declared skill directories. This happens at image build time,
 # never from the mutable /workspace bind mount.
 RUN --mount=type=secret,id=gh_token,required=true \
     set -eu; \
