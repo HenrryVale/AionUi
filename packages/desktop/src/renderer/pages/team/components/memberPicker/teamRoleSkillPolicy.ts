@@ -18,7 +18,7 @@ export type TeamRoleSkillPolicy = {
  */
 export const TEAM_ROLE_SKILL_POLICY_SOURCE = {
   repository: 'HenrryVale/skill-design',
-  commit: '895e916d9c2becf662a2cab57a133a36212c1112',
+  commit: '84e28cf6ddfc0b96cc510154cbd1d34c180ad6f3',
   rolePolicy: 'pack/aionui-team-roles.json',
   catalog: 'pack/skills.json',
   router: 'agent/router.yaml',
@@ -116,8 +116,15 @@ export const TEAM_ROLE_SKILL_POLICIES: Record<
   },
 };
 
+export const TEAM_ROLE_SKILL_BUNDLE_ROOT =
+  `/app/team-skills/${TEAM_ROLE_SKILL_POLICY_SOURCE.commit}`;
+
 export function teamRoleAllowedSkillNames(
   specialty: ProvisionableTeamMemberSpecialty
 ): readonly string[] {
   return TEAM_ROLE_SKILL_POLICIES[specialty].skills;
+}
+
+export function teamRoleSkillBundlePath(skillName: string): string {
+  return `${TEAM_ROLE_SKILL_BUNDLE_ROOT}/${skillName}`;
 }
