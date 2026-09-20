@@ -44,56 +44,68 @@ const qaAssignment: TeamRolePermissionAssignment = {
   mode: 'plan',
 };
 
-const configOptions = {
-  config_options: [
-    {
-      id: 'mode',
-      category: 'mode',
-      type: 'select' as const,
-      current_value: 'bypassPermissions',
-      options: [
-        { value: 'default', label: 'Default' },
-        { value: 'plan', label: 'Plan Mode' },
-        { value: 'bypassPermissions', label: 'Bypass Permissions' },
-      ],
-    },
-  ],
-};
-
 describe('team role permission enforcement', () => {
   it('does nothing when no specialized role assignments exist', async () => {
+    const seedConversationMode = vi.fn(async () => undefined);
     const ensureSession = vi.fn(async () => undefined);
 
     await enforceTeamRolePermissionModesWithDeps(
       team,
       [],
-      {
-        ensureSession,
-        getConfigOptions: vi.fn(),
-        setConfigOption: vi.fn(),
-      }
+      { seedConversationMode, ensureSession }
     );
 
+    expect(seedConversationMode).not.toHaveBeenCalled();
     expect(ensureSession).not.toHaveBeenCalled();
   });
 
-  it('warms the team and applies the required mode to the matching member conversation', async () => {
-    const ensureSession = vi.fn(async () => undefined);
-    const getConfigOptions = vi.fn(async () => configOptions);
-    const setConfigOption = vi.fn(async () => ({
-      confirmation: 'observed' as const,
-      config_options: configOptions.config_options,
-    }));
+  it('seeds the role mode before starting the team session', async () => {
+    const calls: string[] = [];
+    const seedConversationMode = vi.fn(async (conversationId: string, mode: string) => {
+      calls.push(`seed:${conversationId}:${mode}`);
+    });
+    const ensureSession = vi.fn(async (teamId: string) => {
+      calls.push(`ensure:${teamId}`);
+    });
 
     await enforceTeamRolePermissionModesWithDeps(
       team,
       [qaAssignment],
-      { ensureSession, getConfigOptions, setConfigOption }
+      { seedConversationMode, ensureSession }
     );
 
-    expect(ensureSession).toHaveBeenCalledOnce();
-    expect(getConfigOptions).toHaveBeenCalledWith('team-1', 'conv-qa');
-    expect(setConfigOption).toHaveBeenCalledWith('team-1', 'conv-qa', 'mode', 'plan');
+    expect(seedConversationMode).toHaveBeenCalledWith('conv-qa', 'plan');
+    expect(ensureSession).toHaveBeenCalledWith('team-1');
+    expect(calls).toEqual(['seed:conv-qa:plan', 'ensure:team-1']);
+  });
+
+  it('seeds every specialized member before starting the team session', async () => {
+    const calls: string[] = [];
+    const seedConversationMode = vi.fn(async (conversationId: string, mode: string) => {
+      calls.push(`seed:${conversationId}:${mode}`);
+    });
+    const ensureSession = vi.fn(async () => {
+      calls.push('ensure');
+    });
+
+    await enforceTeamRolePermissionModesWithDeps(
+      team,
+      [
+        {
+          assistantId: 'team-role:bare:claude:pm',
+          assistantName: 'Claude PM',
+          mode: 'bypassPermissions',
+        },
+        qaAssignment,
+      ],
+      { seedConversationMode, ensureSession }
+    );
+
+    expect(calls).toEqual([
+      'seed:conv-pm:bypassPermissions',
+      'seed:conv-qa:plan',
+      'ensure',
+    ]);
   });
 
   it('fails closed when the required role member cannot be resolved', async () => {
@@ -102,48 +114,29 @@ describe('team role permission enforcement', () => {
         team,
         [{ ...qaAssignment, assistantName: 'Claude QA Missing' }],
         {
+          seedConversationMode: vi.fn(async () => undefined),
           ensureSession: vi.fn(async () => undefined),
-          getConfigOptions: vi.fn(),
-          setConfigOption: vi.fn(),
         }
       )
     ).rejects.toThrow('Role member not found');
   });
 
-  it('fails closed when the runtime does not advertise the required permission mode', async () => {
-    const unsupported = {
-      config_options: [
-        {
-          ...configOptions.config_options[0],
-          options: [{ value: 'default', label: 'Default' }],
-        },
-      ],
-    };
+  it('does not start the team if seeding a role mode fails', async () => {
+    const ensureSession = vi.fn(async () => undefined);
 
     await expect(
       enforceTeamRolePermissionModesWithDeps(
         team,
         [qaAssignment],
         {
-          ensureSession: vi.fn(async () => undefined),
-          getConfigOptions: vi.fn(async () => unsupported),
-          setConfigOption: vi.fn(),
+          seedConversationMode: vi.fn(async () => {
+            throw new Error('seed failed');
+          }),
+          ensureSession,
         }
       )
-    ).rejects.toThrow('Required permission mode "plan" is unavailable');
-  });
+    ).rejects.toThrow('seed failed');
 
-  it('fails closed when the runtime exposes no mode option', async () => {
-    await expect(
-      enforceTeamRolePermissionModesWithDeps(
-        team,
-        [qaAssignment],
-        {
-          ensureSession: vi.fn(async () => undefined),
-          getConfigOptions: vi.fn(async () => ({ config_options: [] })),
-          setConfigOption: vi.fn(),
-        }
-      )
-    ).rejects.toThrow('Permission mode option is unavailable');
+    expect(ensureSession).not.toHaveBeenCalled();
   });
 });
