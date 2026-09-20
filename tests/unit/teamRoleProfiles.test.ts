@@ -169,6 +169,54 @@ const skills: SkillInfo[] = [
     source: 'custom',
   },
   {
+    name: 'web-typography',
+    description: 'Typography systems for web interfaces',
+    location: '/skills/web-typography',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
+    name: 'microinteractions',
+    description: 'Purposeful UI feedback and microinteractions',
+    location: '/skills/microinteractions',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
+    name: 'theme-factory',
+    description: 'Theme and visual token generation',
+    location: '/skills/theme-factory',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
+    name: 'web-artifact-builder',
+    description: 'Build self-contained interactive web artifacts',
+    location: '/skills/web-artifact-builder',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
+    name: 'generative-art',
+    description: 'Reproducible generative visual work',
+    location: '/skills/generative-art',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
+    name: 'business-identity-gate',
+    description: 'Prevent accidental real-brand identity leakage in demos',
+    location: '/skills/business-identity-gate',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
     name: 'officecli-pitch-deck',
     description: 'Project planning and frontend product presentation deck',
     location: '/skills/officecli-pitch-deck',
@@ -251,7 +299,8 @@ describe('team role profiles', () => {
 
   it('pins the curated skill policy to the audited skill-design snapshot', () => {
     expect(TEAM_ROLE_SKILL_POLICY_SOURCE.repository).toBe('HenrryVale/skill-design');
-    expect(TEAM_ROLE_SKILL_POLICY_SOURCE.commit).toBe('822cbc69081c4b7b9b35c75da1395e012a191369');
+    expect(TEAM_ROLE_SKILL_POLICY_SOURCE.commit).toBe('895e916d9c2becf662a2cab57a133a36212c1112');
+    expect(TEAM_ROLE_SKILL_POLICY_SOURCE.rolePolicy).toBe('pack/aionui-team-roles.json');
   });
 
   it('selects only exact allowlisted skills in policy order', () => {
@@ -270,8 +319,16 @@ describe('team role profiles', () => {
       'refactoring-ui',
       'ui-ux-pro-max',
       'ux-heuristics',
+      'web-typography',
+      'microinteractions',
+      'theme-factory',
       'web-motion-toolkit',
+      'web-artifact-builder',
+      'generative-art',
+      'business-identity-gate',
+      'prompt-injection-gate',
       'test-first-gate',
+      'security-gate',
       'ship-gate',
     ]);
   });
@@ -298,10 +355,11 @@ describe('team role profiles', () => {
     expect(resolveTeamRoleSkills('qa', [autoTesting]).map((skill) => skill.name)).toEqual([]);
   });
 
-  it('keeps role catalogs intentionally bounded', () => {
-    expect(TEAM_ROLE_SKILL_POLICIES.frontend.skills.length).toBeLessThanOrEqual(8);
-    expect(TEAM_ROLE_SKILL_POLICIES.backend.skills.length).toBeLessThanOrEqual(5);
-    expect(TEAM_ROLE_SKILL_POLICIES.qa.skills.length).toBeLessThanOrEqual(2);
+  it('keeps broad availability separate from per-task routing limits', () => {
+    expect(TEAM_ROLE_SKILL_POLICIES.frontend.skills).toHaveLength(16);
+    expect(TEAM_ROLE_SKILL_POLICIES.frontend.skills[0]).toBe('skill-design');
+    expect(TEAM_ROLE_SKILL_POLICIES.backend.skills).toHaveLength(6);
+    expect(TEAM_ROLE_SKILL_POLICIES.qa.skills).toEqual(['testing', 'ship-gate']);
   });
 
   it('does not inherit arbitrary base-assistant skills into a managed role', async () => {
