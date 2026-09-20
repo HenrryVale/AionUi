@@ -10,7 +10,7 @@ describe('team member identity helpers', () => {
   it('composes a specialty into the persisted team member name', () => {
     expect(composeTeamMemberName('Claude', 'pm')).toBe('Claude PM');
     expect(composeTeamMemberName('Claude', 'qa')).toBe('Claude QA');
-    expect(composeTeamMemberName('Claude', 'backend')).toBe('Claude Backend');
+    expect(composeTeamMemberName('Claude', 'backend')).toBe('Claude Dev');
   });
 
   it('does not append the same specialty twice', () => {
