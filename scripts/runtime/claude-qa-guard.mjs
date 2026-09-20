@@ -6,6 +6,7 @@ const DEFAULT_DB_PATH = '/data/aionui-backend.db';
 const DEFAULT_AUDIT_PATH = '/data/qa-guard-audit.ndjson';
 const TEAM_MCP_PREFIX = 'mcp__aionui-team__';
 const QA_ASSISTANT_SUFFIX = ':qa';
+const PM_ASSISTANT_SUFFIX = ':pm';
 
 const QA_LOCAL_READ_TOOLS = new Set(['Read', 'Glob', 'Grep']);
 const QA_TEAM_READ_TOOLS = new Set([
@@ -91,6 +92,31 @@ function teamToolName(toolName) {
 function onlyKeys(object, allowed) {
   if (!object || typeof object !== 'object' || Array.isArray(object)) return false;
   return Object.keys(object).every((key) => allowed.has(key));
+}
+
+export function evaluatePmDependencyHandoff({ toolName, toolInput = {}, identity }) {
+  if (!identity?.isPm) return pass('not a PM-managed dependency handoff');
+
+  const teamTool = teamToolName(toolName);
+  if (teamTool !== 'team_task_create') {
+    return pass('PM tool is outside the dependency handoff guard');
+  }
+
+  const owner = toolInput?.owner;
+  const blockedBy = toolInput?.blocked_by;
+  const targetsQa = Array.isArray(identity.qaSlotIds) && identity.qaSlotIds.includes(owner);
+
+  if (!targetsQa) {
+    return pass('task is not assigned to QA');
+  }
+
+  if (Array.isArray(blockedBy) && blockedBy.length > 0) {
+    return deny(
+      'PM handoff guard: do not precreate a QA task with blocked_by. Wait until upstream work is completed, then create the QA task as immediately actionable with no blocked_by dependency.'
+    );
+  }
+
+  return pass('QA task is immediately actionable');
 }
 
 export function evaluateQaTool({
@@ -204,6 +230,7 @@ function resolveQaIdentity(db, sessionId, permissionMode) {
   let teamId = null;
   let slotId = null;
   let leadSlotId = null;
+  let qaSlotIds = [];
 
   if (conversationId) {
     const teams = db
@@ -218,22 +245,41 @@ function resolveQaIdentity(db, sessionId, permissionMode) {
       teamId = row.id;
       slotId = member.slot_id ?? null;
       leadSlotId = agents.find((agent) => agent?.role === 'lead')?.slot_id ?? null;
+      qaSlotIds = agents
+        .filter(
+          (agent) =>
+            typeof agent?.assistant_id === 'string' &&
+            agent.assistant_id.endsWith(QA_ASSISTANT_SUFFIX)
+        )
+        .map((agent) => agent.slot_id)
+        .filter(Boolean);
       break;
     }
   }
 
   const knownQa = typeof assistantId === 'string' && assistantId.endsWith(QA_ASSISTANT_SUFFIX);
+  const knownPm = typeof assistantId === 'string' && assistantId.endsWith(PM_ASSISTANT_SUFFIX);
   const knownNonQa = typeof assistantId === 'string' && !knownQa;
   const planFallback = !assistantId && permissionMode === 'plan';
 
   return {
     enforce: knownQa || planFallback,
-    identitySource: knownQa ? 'assistant-id' : planFallback ? 'plan-fallback' : knownNonQa ? 'non-qa' : 'unknown',
+    isPm: knownPm,
+    identitySource: knownQa
+      ? 'assistant-id'
+      : knownPm
+        ? 'pm-assistant-id'
+        : planFallback
+          ? 'plan-fallback'
+          : knownNonQa
+            ? 'non-qa'
+            : 'unknown',
     assistantId,
     conversationId,
     teamId,
     slotId,
     leadSlotId,
+    qaSlotIds,
   };
 }
 
@@ -314,6 +360,19 @@ export async function main({
       slotId: null,
       leadSlotId: null,
     };
+  }
+
+  const pmHandoff = evaluatePmDependencyHandoff({
+    toolName,
+    toolInput,
+    identity,
+  });
+
+  if (pmHandoff.decision === 'deny') {
+    auditDecision(input, identity, pmHandoff, auditPath);
+    db?.close?.();
+    process.stdout.write(JSON.stringify(denyPayload(pmHandoff.reason)));
+    return;
   }
 
   if (!identity.enforce) {
