@@ -38,17 +38,21 @@
 #   docker run --rm --user 0 -v "$(pwd)/data:/data" aionui-web \
 #       chown 10001:10001 /data
 #
+ARG SKILL_DESIGN_COMMIT=2fc19a167312c62022fe813490e52852c4afc0ff
+
 # ---- Builder ----------------------------------------------------------------
 # node:22-slim satisfies package.json "engines" (node >=22 <25) and matches the
 # Node version used by the release workflow.
 FROM node:22-slim AS builder
+
+ARG SKILL_DESIGN_COMMIT
 
 WORKDIR /app
 
 # curl/tar/unzip are used by scripts/prepare-aioncore.js to fetch and unpack the
 # backend release asset; ca-certificates is required for the HTTPS download.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl tar unzip \
+    && apt-get install -y --no-install-recommends ca-certificates curl git python3 tar unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Pinned so image builds stay reproducible (the workflow tracks bun latest).
@@ -77,6 +81,26 @@ COPY packages/web-host/package.json ./packages/web-host/
 # @scope/platform optional dependencies, not from an install hook, and nothing
 # in this build ever launches Electron.
 RUN bun install --frozen-lockfile --ignore-scripts
+
+# Curated Team role skills. The source repo and every upstream dependency it
+# installs are pinned/audited; the staging script normalizes the skills CLI's
+# agent-specific layout into one flat bundle. This happens at image build time,
+# never from the mutable /workspace bind mount.
+RUN set -eu; \
+    mkdir -p /opt/skill-design; \
+    git -C /opt/skill-design init -q; \
+    git -C /opt/skill-design remote add origin https://github.com/HenrryVale/skill-design.git; \
+    git -C /opt/skill-design fetch --depth 1 origin "$SKILL_DESIGN_COMMIT"; \
+    git -C /opt/skill-design checkout -q --detach FETCH_HEAD; \
+    test "$(git -C /opt/skill-design rev-parse HEAD)" = "$SKILL_DESIGN_COMMIT"; \
+    python3 /opt/skill-design/scripts/validate.py; \
+    python3 /opt/skill-design/scripts/stage_aionui_team.py /opt/aionui-team-skills --force; \
+    test "$(find /opt/aionui-team-skills/bundle -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 17; \
+    test ! -e /opt/aionui-team-skills/bundle/canvas-design; \
+    test ! -e /opt/aionui-team-skills/bundle/design-taste-frontend; \
+    test ! -e /opt/aionui-team-skills/bundle/webapp-testing; \
+    mkdir -p "/opt/aionui-team-skills-versioned/$SKILL_DESIGN_COMMIT"; \
+    cp -a /opt/aionui-team-skills/bundle/. "/opt/aionui-team-skills-versioned/$SKILL_DESIGN_COMMIT/"
 
 COPY . .
 
@@ -129,6 +153,10 @@ WORKDIR /app
 # Layout is load-bearing: web-cli resolves static/ and bundled-aioncore/
 # as siblings of the executable via process.execPath.
 COPY --from=builder /opt/aionui-web/ /app/
+
+# Versioned, audited role-skill bundle. It remains root-owned under /app and is
+# therefore immutable when the runtime container is launched with --read-only.
+COPY --from=builder /opt/aionui-team-skills-versioned/ /app/team-skills/
 
 # Claude QA capability wall. The hook and managed policy are baked outside HOME,
 # root-owned, and become immutable at runtime because production runs with a
