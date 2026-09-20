@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   evaluateQaTool,
@@ -31,6 +32,16 @@ function evaluate(toolName, toolInput = {}, overrides = {}) {
 }
 
 describe('Claude QA capability guard', () => {
+  it('is wired through immutable managed Claude settings', () => {
+    const managed = JSON.parse(
+      fs.readFileSync('scripts/runtime/claude-managed-settings.json', 'utf8')
+    );
+    const hook = managed?.hooks?.PreToolUse?.[0];
+    expect(hook?.matcher).toBe('*');
+    expect(hook?.hooks?.[0]?.type).toBe('command');
+    expect(hook?.hooks?.[0]?.command).toContain('/app/claude-qa-guard.mjs');
+  });
+
   it('does not constrain a non-QA session', () => {
     expect(
       evaluateQaTool({
