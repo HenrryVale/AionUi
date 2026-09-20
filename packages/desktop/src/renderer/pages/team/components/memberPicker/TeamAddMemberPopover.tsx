@@ -10,6 +10,7 @@ import { useTeamTabs } from '../../hooks/TeamTabsContext';
 import type { TeamAssistantOption } from '../assistantSelectUtils';
 import { resolveDefaultTeamAgentModel } from '../teamCreateModelResolver';
 import TeamAssistantPickerDropdown from './TeamAssistantPickerDropdown';
+import { nextAvailableTeamMemberName } from './teamMemberIdentity';
 
 const useAcpDraft = getSendBoxDraftHook('acp', { _type: 'acp', atPath: [], content: '', uploadFile: [] });
 const useAionrsDraft = getSendBoxDraftHook('aionrs', { _type: 'aionrs', atPath: [], content: '', uploadFile: [] });
@@ -61,7 +62,10 @@ const TeamAddMemberPopover: React.FC<Props> = ({ children, disabled = false }) =
       });
       const input: TeamAssistantInput = {
         role: 'teammate',
-        assistant_name: assistant.name,
+        assistant_name: nextAvailableTeamMemberName(
+          assistant.name,
+          teamMembers.map((member) => member.assistant_name)
+        ),
         assistant_id: assistant.id,
         model,
       };
