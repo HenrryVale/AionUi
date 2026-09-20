@@ -7,6 +7,10 @@ import {
   teamRoleAssistantId,
   TEAM_ROLE_PROFILES,
 } from '@/renderer/pages/team/components/memberPicker/teamRoleProfiles';
+import {
+  TEAM_ROLE_SKILL_POLICIES,
+  TEAM_ROLE_SKILL_POLICY_SOURCE,
+} from '@/renderer/pages/team/components/memberPicker/teamRoleSkillPolicy';
 
 const baseAssistant: Assistant = {
   id: 'bare:claude',
@@ -77,12 +81,132 @@ const skills: SkillInfo[] = [
     source: 'builtin',
   },
   {
-    name: 'security-review',
-    description: 'Security audit and vulnerability review',
-    location: '/skills/security-review',
+    name: 'ship-gate',
+    description: 'Fresh verification evidence before completion claims',
+    location: '/skills/ship-gate',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
+    name: 'debug-gate',
+    description: 'Evidence-first root cause debugging',
+    location: '/skills/debug-gate',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
+    name: 'test-first-gate',
+    description: 'Test-first behavior change discipline',
+    location: '/skills/test-first-gate',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
+    name: 'security-gate',
+    description: 'Application and agent security review',
+    location: '/skills/security-gate',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
+    name: 'prompt-injection-gate',
+    description: 'Trust boundary for external content',
+    location: '/skills/prompt-injection-gate',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
+    name: 'skill-design',
+    description: 'Curated UI/product skill router',
+    location: '/skills/skill-design',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
+    name: 'frontend-design',
+    description: 'Create polished new frontend interfaces',
+    location: '/skills/frontend-design',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
+    name: 'refactoring-ui',
+    description: 'Improve an existing interface',
+    location: '/skills/refactoring-ui',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
+    name: 'ui-ux-pro-max',
+    description: 'UI system and design architecture',
+    location: '/skills/ui-ux-pro-max',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
+    name: 'ux-heuristics',
+    description: 'Usability and UX audit',
+    location: '/skills/ux-heuristics',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
+    name: 'web-motion-toolkit',
+    description: 'CSS, WAAPI, Anime.js and Three.js routing',
+    location: '/skills/web-motion-toolkit',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
+    name: 'officecli-pitch-deck',
+    description: 'Project planning and frontend product presentation deck',
+    location: '/skills/officecli-pitch-deck',
     is_auto_inject: false,
     is_custom: false,
     source: 'builtin',
+  },
+  {
+    name: 'officecli-financial-model',
+    description: 'Project planning, analysis and financial modeling',
+    location: '/skills/officecli-financial-model',
+    is_auto_inject: false,
+    is_custom: false,
+    source: 'builtin',
+  },
+  {
+    name: 'canvas-design',
+    description: 'Visual canvas layout',
+    location: '/skills/canvas-design',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
+    name: 'design-taste-frontend',
+    description: 'Visual frontend taste',
+    location: '/skills/design-taste-frontend',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
+  },
+  {
+    name: 'webapp-testing',
+    description: 'Browser webapp testing helper',
+    location: '/skills/webapp-testing',
+    is_auto_inject: false,
+    is_custom: true,
+    source: 'custom',
   },
 ];
 
@@ -125,22 +249,68 @@ describe('team role profiles', () => {
     expect(TEAM_ROLE_PROFILES.qa.rules).toContain('Do not retry the action through another tool');
   });
 
-  it('selects only real catalog skills relevant to a role', () => {
-    expect(resolveTeamRoleSkills('qa', skills).map((skill) => skill.name)).toEqual(['testing']);
-    expect(resolveTeamRoleSkills('security', skills).map((skill) => skill.name)).toEqual(['security-review']);
+  it('pins the curated skill policy to the audited skill-design snapshot', () => {
+    expect(TEAM_ROLE_SKILL_POLICY_SOURCE.repository).toBe('HenrryVale/skill-design');
+    expect(TEAM_ROLE_SKILL_POLICY_SOURCE.commit).toBe('822cbc69081c4b7b9b35c75da1395e012a191369');
   });
 
-  it('does not explicitly select builtin skills that are already auto-injected', () => {
-    const autoTesting: SkillInfo = { ...skills[1], name: 'testing-auto', is_auto_inject: true };
+  it('selects only exact allowlisted skills in policy order', () => {
+    expect(resolveTeamRoleSkills('qa', skills).map((skill) => skill.name)).toEqual([
+      'testing',
+      'ship-gate',
+    ]);
+    expect(resolveTeamRoleSkills('security', skills).map((skill) => skill.name)).toEqual([
+      'security-gate',
+      'prompt-injection-gate',
+      'ship-gate',
+    ]);
+    expect(resolveTeamRoleSkills('frontend', skills).map((skill) => skill.name)).toEqual([
+      'skill-design',
+      'frontend-design',
+      'refactoring-ui',
+      'ui-ux-pro-max',
+      'ux-heuristics',
+      'web-motion-toolkit',
+      'test-first-gate',
+      'ship-gate',
+    ]);
+  });
+
+  it('does not fuzzy-match unrelated office skills even when descriptions contain role keywords', () => {
+    expect(resolveTeamRoleSkills('pm', skills).map((skill) => skill.name)).toEqual(['ship-gate']);
+    expect(resolveTeamRoleSkills('backend', skills).map((skill) => skill.name)).not.toContain(
+      'officecli-pitch-deck'
+    );
+    expect(resolveTeamRoleSkills('backend', skills).map((skill) => skill.name)).not.toContain(
+      'officecli-financial-model'
+    );
+  });
+
+  it('never auto-selects quarantined or WARN-only skills', () => {
+    const frontendNames = resolveTeamRoleSkills('frontend', skills).map((skill) => skill.name);
+    expect(frontendNames).not.toContain('canvas-design');
+    expect(frontendNames).not.toContain('design-taste-frontend');
+    expect(frontendNames).not.toContain('webapp-testing');
+  });
+
+  it('does not explicitly select a curated skill when that concrete skill is auto-injected', () => {
+    const autoTesting: SkillInfo = { ...skills[1], is_auto_inject: true };
     expect(resolveTeamRoleSkills('qa', [autoTesting]).map((skill) => skill.name)).toEqual([]);
   });
 
-  it('inherits base assistant skills and adds role-specific skills', async () => {
-    const detailWithBaseSkill = {
+  it('keeps role catalogs intentionally bounded', () => {
+    expect(TEAM_ROLE_SKILL_POLICIES.frontend.skills.length).toBeLessThanOrEqual(8);
+    expect(TEAM_ROLE_SKILL_POLICIES.backend.skills.length).toBeLessThanOrEqual(5);
+    expect(TEAM_ROLE_SKILL_POLICIES.qa.skills.length).toBeLessThanOrEqual(2);
+  });
+
+  it('does not inherit arbitrary base-assistant skills into a managed role', async () => {
+    const detailWithContaminatedBaseSkills = {
       ...baseDetail,
       capabilities: {
         ...baseDetail.capabilities,
-        default_skill_ids: ['architecture'],
+        default_skill_ids: ['architecture', 'officecli-pitch-deck', 'officecli-financial-model'],
+        custom_skill_names: ['officecli-pitch-deck'],
       },
     };
     const createAssistant = vi.fn(async (request) => ({
@@ -155,7 +325,7 @@ describe('team role profiles', () => {
       { baseAssistantId: baseAssistant.id, specialty: 'qa' },
       {
         listAssistants: vi.fn(async () => [baseAssistant]),
-        getAssistant: vi.fn(async () => detailWithBaseSkill),
+        getAssistant: vi.fn(async () => detailWithContaminatedBaseSkills),
         createAssistant,
         updateAssistant: vi.fn(),
         setAssistantState: vi.fn(async () => undefined),
@@ -166,9 +336,10 @@ describe('team role profiles', () => {
 
     expect(createAssistant).toHaveBeenCalledWith(
       expect.objectContaining({
-        enabled_skills: ['architecture', 'testing'],
+        enabled_skills: ['testing', 'ship-gate'],
+        custom_skill_names: ['ship-gate'],
         defaults: expect.objectContaining({
-          skills: { mode: 'fixed', value: ['architecture', 'testing'] },
+          skills: { mode: 'fixed', value: ['testing', 'ship-gate'] },
         }),
       })
     );
@@ -203,11 +374,12 @@ describe('team role profiles', () => {
         id: 'team-role:bare:claude:qa',
         name: 'Claude QA',
         agent_id: 'claude-agent',
-        enabled_skills: ['testing'],
+        enabled_skills: ['testing', 'ship-gate'],
+        custom_skill_names: ['ship-gate'],
         defaults: expect.objectContaining({
           model: { mode: 'fixed', value: 'claude-sonnet' },
           permission: { mode: 'fixed', value: 'plan' },
-          skills: { mode: 'fixed', value: ['testing'] },
+          skills: { mode: 'fixed', value: ['testing', 'ship-gate'] },
         }),
       })
     );
@@ -242,7 +414,11 @@ describe('team role profiles', () => {
 
     expect(createAssistant).not.toHaveBeenCalled();
     expect(updateAssistant).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'team-role:bare:claude:qa', enabled_skills: ['testing'] })
+      expect.objectContaining({
+        id: 'team-role:bare:claude:qa',
+        enabled_skills: ['testing', 'ship-gate'],
+        custom_skill_names: ['ship-gate'],
+      })
     );
   });
 });
