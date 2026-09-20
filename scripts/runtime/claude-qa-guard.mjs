@@ -42,6 +42,12 @@ export function pathIsInsideWorkspace(workspace, candidate) {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
+function hasPathTraversalPattern(value) {
+  if (typeof value !== 'string' || value === '') return false;
+  if (path.isAbsolute(value)) return true;
+  return value.split(/[\\/]+/).includes('..');
+}
+
 function localReadPath(toolName, toolInput, cwd) {
   if (toolName === 'Read') {
     const filePath = toolInput?.file_path ?? toolInput?.path;
@@ -55,6 +61,15 @@ function localReadPath(toolName, toolInput, cwd) {
 
   if (toolName === 'Glob' || toolName === 'Grep') {
     const searchRoot = toolInput?.path;
+    const patterns = [
+      toolName === 'Glob' ? toolInput?.pattern : null,
+      toolName === 'Grep' ? toolInput?.glob : null,
+    ].filter((value) => typeof value === 'string');
+
+    if (patterns.some(hasPathTraversalPattern)) {
+      return deny('QA guard: absolute or parent-traversing search patterns are not allowed.');
+    }
+
     if (searchRoot == null || searchRoot === '') {
       return pass('QA search defaults to assigned workspace');
     }
