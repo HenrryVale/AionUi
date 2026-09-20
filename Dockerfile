@@ -38,7 +38,7 @@
 #   docker run --rm --user 0 -v "$(pwd)/data:/data" aionui-web \
 #       chown 10001:10001 /data
 #
-ARG SKILL_DESIGN_COMMIT=2fc19a167312c62022fe813490e52852c4afc0ff
+ARG SKILL_DESIGN_COMMIT=75e78abdf42deee73cbe51199806afdb8eebf539
 
 # ---- Builder ----------------------------------------------------------------
 # node:22-slim satisfies package.json "engines" (node >=22 <25) and matches the
