@@ -104,6 +104,12 @@ RUN set -eu; \
 
 COPY . .
 
+# The application vendors the exact role-policy snapshot used by TypeScript.
+# Fail the image build if it drifts from the pinned skill-design commit.
+RUN cmp \
+    /app/packages/desktop/src/renderer/pages/team/components/memberPicker/teamRoleSkillPolicy.snapshot.json \
+    /opt/skill-design/pack/aionui-team-roles.json
+
 # Renderer SPA → out/renderer (consumed by pack-web-cli.js as static/).
 RUN NODE_OPTIONS=--max-old-space-size=8192 \
     bunx electron-vite build --config packages/desktop/electron.vite.config.ts
