@@ -9,7 +9,9 @@ import type {
 import type { SkillInfo } from '@/renderer/pages/settings/AssistantSettings/types';
 import {
   TEAM_ROLE_AUTO_BLOCKED_SKILLS,
+  TEAM_ROLE_SKILL_BUNDLE_ROOT,
   teamRoleAllowedSkillNames,
+  teamRoleSkillBundlePath,
 } from './teamRoleSkillPolicy';
 import type { ProvisionableTeamMemberSpecialty } from './teamRoleSkillPolicy';
 
@@ -247,6 +249,110 @@ export function resolveTeamRoleSkills(
     .slice(0, limit);
 }
 
+export type TeamRoleSkillImportRecord = {
+  skill_name?: string | null;
+  source_path?: string | null;
+  status: string;
+  created_at: number;
+};
+
+export type TeamRoleSkillImportResult = {
+  skill_name: string;
+  skill_names?: string[];
+  failed?: Array<{
+    source_name: string;
+    code: string;
+    error_path?: string;
+  }>;
+};
+
+const SUCCESSFUL_SKILL_IMPORT_STATUSES = new Set(['imported', 'overwritten']);
+const MANAGED_TEAM_SKILL_BUNDLE_PREFIX = '/app/team-skills/';
+
+function latestSuccessfulSkillImport(
+  records: TeamRoleSkillImportRecord[],
+  skillName: string
+): TeamRoleSkillImportRecord | undefined {
+  return records
+    .filter(
+      (record) =>
+        record.skill_name === skillName &&
+        SUCCESSFUL_SKILL_IMPORT_STATUSES.has(record.status)
+    )
+    .sort((a, b) => b.created_at - a.created_at)[0];
+}
+
+function isManagedTeamSkillSource(sourcePath: string | null | undefined): boolean {
+  return typeof sourcePath === 'string' && sourcePath.startsWith(MANAGED_TEAM_SKILL_BUNDLE_PREFIX);
+}
+
+export async function ensureTeamRoleSkills(
+  specialty: ProvisionableTeamMemberSpecialty,
+  deps: Pick<
+    TeamRoleProfileDeps,
+    'listAvailableSkills' | 'listSkillImportHistory' | 'importSkill'
+  >
+): Promise<SkillInfo[]> {
+  const expectedNames = [...teamRoleAllowedSkillNames(specialty)];
+
+  for (const name of expectedNames) {
+    if (TEAM_ROLE_AUTO_BLOCKED_SKILLS.has(name)) {
+      throw new Error(`Team role skill policy contains blocked skill: ${name}`);
+    }
+  }
+
+  let availableSkills = await deps.listAvailableSkills();
+  const importHistory = await deps.listSkillImportHistory();
+  const availableByName = new Map(availableSkills.map((skill) => [skill.name, skill]));
+
+  for (const skillName of expectedNames) {
+    const existing = availableByName.get(skillName);
+    const expectedSourcePath = teamRoleSkillBundlePath(skillName);
+    const latestImport = latestSuccessfulSkillImport(importHistory, skillName);
+    const latestSourcePath = latestImport?.source_path;
+
+    if (existing && latestSourcePath === expectedSourcePath) {
+      continue;
+    }
+
+    if (existing && !isManagedTeamSkillSource(latestSourcePath)) {
+      throw new Error(
+        `Team role skill provenance conflict for ${skillName}: an available skill with this name was not imported from the managed bundle ${TEAM_ROLE_SKILL_BUNDLE_ROOT}`
+      );
+    }
+
+    const imported = await deps.importSkill(expectedSourcePath);
+    if (imported.failed?.length) {
+      const detail = imported.failed.map((failure) => `${failure.source_name}:${failure.code}`).join(', ');
+      throw new Error(`Managed Team skill import failed for ${skillName}: ${detail}`);
+    }
+
+    const importedNames = new Set([
+      imported.skill_name,
+      ...(imported.skill_names ?? []),
+    ].filter(Boolean));
+
+    if (!importedNames.has(skillName)) {
+      throw new Error(
+        `Managed Team skill import did not report expected skill ${skillName} from ${expectedSourcePath}`
+      );
+    }
+  }
+
+  availableSkills = await deps.listAvailableSkills();
+  const resolved = resolveTeamRoleSkills(specialty, availableSkills);
+  const resolvedNames = resolved.map((skill) => skill.name);
+  const missing = expectedNames.filter((name) => !resolvedNames.includes(name));
+
+  if (missing.length) {
+    throw new Error(
+      `Managed Team role skills are unavailable after import for ${specialty}: ${missing.join(', ')}`
+    );
+  }
+
+  return resolved;
+}
+
 export type TeamRoleProfileDeps = {
   listAssistants: () => Promise<Assistant[]>;
   getAssistant: (id: string) => Promise<AssistantDetail>;
@@ -254,6 +360,8 @@ export type TeamRoleProfileDeps = {
   updateAssistant: (request: UpdateAssistantRequest) => Promise<Assistant>;
   setAssistantState: (id: string, enabled: boolean) => Promise<unknown>;
   listAvailableSkills: () => Promise<SkillInfo[]>;
+  listSkillImportHistory: () => Promise<TeamRoleSkillImportRecord[]>;
+  importSkill: (skillPath: string) => Promise<TeamRoleSkillImportResult>;
   writeAssistantRule: (assistantId: string, content: string) => Promise<unknown>;
 };
 
@@ -264,6 +372,8 @@ const liveDeps: TeamRoleProfileDeps = {
   updateAssistant: (request) => ipcBridge.assistants.update.invoke(request),
   setAssistantState: (id, enabled) => ipcBridge.assistants.setState.invoke({ id, enabled }),
   listAvailableSkills: () => ipcBridge.fs.listAvailableSkills.invoke(),
+  listSkillImportHistory: () => ipcBridge.fs.listSkillImportHistory.invoke(),
+  importSkill: (skillPath) => ipcBridge.fs.importSkill.invoke({ skill_path: skillPath }),
   writeAssistantRule: (assistantId, content) =>
     ipcBridge.fs.writeAssistantRule.invoke({ assistant_id: assistantId, locale: 'en-US', content }),
 };
@@ -311,11 +421,10 @@ export async function provisionTeamRoleAssistant(
 
   const profile = TEAM_ROLE_PROFILES[input.specialty];
   const roleAssistantId = teamRoleAssistantId(base.id, input.specialty);
-  const [baseDetail, availableSkills] = await Promise.all([
+  const [baseDetail, matchedSkills] = await Promise.all([
     deps.getAssistant(base.id),
-    deps.listAvailableSkills(),
+    ensureTeamRoleSkills(input.specialty, deps),
   ]);
-  const matchedSkills = resolveTeamRoleSkills(input.specialty, availableSkills);
   // Managed Team roles use a curated exact-name catalog. Do not inherit arbitrary
   // base-assistant skills: that is how unrelated office/presentation skills can
   // leak into PM/Dev/QA profiles.
