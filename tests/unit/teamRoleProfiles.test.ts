@@ -604,6 +604,17 @@ describe('team role profiles', () => {
     );
   });
 
+  it('Team creation pre-provisions the dynamic catalog for PM bases', () => {
+    const source = fs.readFileSync(
+      'packages/desktop/src/renderer/pages/team/components/TeamCreateModal.tsx',
+      'utf8'
+    );
+
+    expect(source).toContain("if (member.specialty === 'pm')");
+    expect(source).toContain('pmBaseAssistantIds.add(member.assistant.id)');
+    expect(source).toContain('await ensureTeamDynamicRoleAssistants(baseAssistantId)');
+  });
+
   it('pre-provisions all dynamic role assistants for PM delegation', async () => {
     const createAssistant = vi.fn(async (request) => ({
       ...baseAssistant,
