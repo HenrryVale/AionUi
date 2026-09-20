@@ -5,8 +5,8 @@ export type ProvisionableTeamMemberSpecialty = Exclude<TeamMemberSpecialty, 'gen
 export type TeamRoleSkillPolicy = {
   /**
    * Exact skill names, ordered by preference. A role never falls back to
-   * fuzzy name/description matches. Missing managed skills are imported from
-   * the pinned immutable bundle and provisioning fails closed if they remain unavailable.
+   * fuzzy name/description matches. Managed skills resolve only from the pinned immutable bundle and
+   * provisioning fails closed if an expected entry is unavailable.
    */
   skills: readonly string[];
 };
@@ -19,7 +19,7 @@ export type TeamRoleSkillPolicy = {
  */
 export const TEAM_ROLE_SKILL_POLICY_SOURCE = {
   repository: 'HenrryVale/skill-design',
-  commit: '8fea33732ab971bcc5488694de0f2cd99673244e',
+  commit: '4ef1e1fc5222e596205ef383a128c181651350c5',
   rolePolicy: 'pack/aionui-team-roles.json',
   catalog: 'pack/skills.json',
   router: 'agent/router.yaml',
