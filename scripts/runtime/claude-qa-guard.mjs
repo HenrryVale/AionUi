@@ -117,12 +117,28 @@ export function evaluateQaTool({
     }
 
     if (teamTool === 'team_send_message') {
+      const allowedKeys = new Set(['to', 'message', 'files']);
+      if (!onlyKeys(toolInput, allowedKeys)) {
+        return deny('QA guard: Team messages may contain only to, message and workspace-scoped files.');
+      }
       if (!identity.leadSlotId) {
         return deny('QA guard: Team lead identity is unavailable; message routing fails closed.');
       }
       if (toolInput?.to !== identity.leadSlotId) {
         return deny('QA guard: QA may send Team messages only to the lead; broadcast or peer messaging is denied.');
       }
+
+      if (toolInput?.files != null) {
+        if (
+          !Array.isArray(toolInput.files) ||
+          toolInput.files.some(
+            (file) => typeof file !== 'string' || !pathIsInsideWorkspace(cwd, file)
+          )
+        ) {
+          return deny('QA guard: Team message attachments must stay inside the assigned workspace.');
+        }
+      }
+
       return pass('QA may report evidence to the Team lead');
     }
 
