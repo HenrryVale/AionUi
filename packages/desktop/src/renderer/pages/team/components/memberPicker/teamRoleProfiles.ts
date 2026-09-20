@@ -7,9 +7,13 @@ import type {
   UpdateAssistantRequest,
 } from '@/common/types/agent/assistantTypes';
 import type { SkillInfo } from '@/renderer/pages/settings/AssistantSettings/types';
-import type { TeamMemberSpecialty } from './teamMemberIdentity';
+import {
+  TEAM_ROLE_AUTO_BLOCKED_SKILLS,
+  teamRoleAllowedSkillNames,
+} from './teamRoleSkillPolicy';
+import type { ProvisionableTeamMemberSpecialty } from './teamRoleSkillPolicy';
 
-export type ProvisionableTeamMemberSpecialty = Exclude<TeamMemberSpecialty, 'general'>;
+export type { ProvisionableTeamMemberSpecialty } from './teamRoleSkillPolicy';
 
 export type TeamRolePermissionMode = 'plan' | 'bypassPermissions';
 
@@ -18,7 +22,6 @@ type TeamRoleProfile = {
   description: string;
   permissionMode: TeamRolePermissionMode;
   rules: string;
-  skillKeywords: string[];
 };
 
 const COMMON_TURN_END_RULES = `
@@ -34,7 +37,6 @@ export const TEAM_ROLE_PROFILES: Record<ProvisionableTeamMemberSpecialty, TeamRo
     label: 'PM',
     description: 'Coordinates the team, decomposes goals, delegates work and consolidates results.',
     permissionMode: 'bypassPermissions',
-    skillKeywords: ['planning', 'project', 'requirements', 'product', 'task', 'coordination'],
     rules: `
 You are the Project Manager and Team Lead.
 
@@ -61,7 +63,6 @@ ${COMMON_TURN_END_RULES}
     label: 'Architect',
     description: 'Designs system boundaries, interfaces, data flows and technical trade-offs.',
     permissionMode: 'plan',
-    skillKeywords: ['architecture', 'system design', 'design', 'api', 'integration'],
     rules: `
 You are the Software Architect.
 
@@ -82,7 +83,6 @@ ${COMMON_TURN_END_RULES}
     label: 'Dev',
     description: 'Implements backend changes with minimal, testable and traceable code modifications.',
     permissionMode: 'bypassPermissions',
-    skillKeywords: ['backend', 'architecture', 'api', 'spring', 'java', 'testing', 'debug'],
     rules: `
 You are the Backend Developer.
 
@@ -103,7 +103,6 @@ ${COMMON_TURN_END_RULES}
     label: 'Frontend',
     description: 'Implements frontend and UI changes while preserving existing interaction patterns.',
     permissionMode: 'bypassPermissions',
-    skillKeywords: ['frontend', 'react', 'ui', 'ux', 'accessibility', 'testing'],
     rules: `
 You are the Frontend Developer.
 
@@ -111,6 +110,8 @@ Responsibilities:
 - Inspect the current component, state and styling patterns before changing UI code.
 - Preserve responsive behavior, accessibility and existing test selectors unless the task intentionally changes them.
 - Implement the smallest coherent UI change and update relevant tests.
+- Use the curated frontend skill catalog as a toolbox, not a checklist: choose the smallest relevant subset for the assigned task.
+- Prefer the skill-design routing discipline: one dominant capability, only useful supports, and verification before completion claims.
 - Report visual/interaction implications and test evidence.
 
 Boundaries:
@@ -123,7 +124,6 @@ ${COMMON_TURN_END_RULES}
     label: 'Full Stack',
     description: 'Implements coordinated frontend and backend changes across a complete feature slice.',
     permissionMode: 'bypassPermissions',
-    skillKeywords: ['architecture', 'backend', 'frontend', 'api', 'testing', 'debug'],
     rules: `
 You are the Full Stack Developer.
 
@@ -131,6 +131,7 @@ Responsibilities:
 - Trace the complete feature flow across UI, API, persistence and runtime boundaries.
 - Implement only the assigned vertical slice while preserving established contracts.
 - Update relevant tests on both sides of the boundary.
+- Use the curated skill catalog selectively; do not load unrelated UI/product skills merely because they are available.
 - Report changed files, contract changes, validation evidence and risks.
 
 Boundaries:
@@ -142,7 +143,6 @@ ${COMMON_TURN_END_RULES}
     label: 'QA',
     description: 'Validates acceptance criteria, regressions and edge cases with reproducible evidence.',
     permissionMode: 'plan',
-    skillKeywords: ['testing', 'test', 'qa', 'quality', 'regression'],
     rules: `
 You are the QA Engineer.
 
@@ -168,7 +168,6 @@ ${COMMON_TURN_END_RULES}
     label: 'Security',
     description: 'Reviews trust boundaries, permissions, secrets, inputs and dependency risks.',
     permissionMode: 'plan',
-    skillKeywords: ['security', 'secure', 'audit', 'threat', 'vulnerability', 'permission'],
     rules: `
 You are the Security Reviewer.
 
@@ -189,7 +188,6 @@ ${COMMON_TURN_END_RULES}
     label: 'DevOps',
     description: 'Owns build, deployment, runtime configuration and operational reliability changes.',
     permissionMode: 'bypassPermissions',
-    skillKeywords: ['devops', 'docker', 'deploy', 'deployment', 'ci', 'cd', 'infrastructure', 'operations'],
     rules: `
 You are the DevOps Engineer.
 
@@ -209,7 +207,6 @@ ${COMMON_TURN_END_RULES}
     label: 'Reviewer',
     description: 'Reviews code changes for correctness, maintainability and regression risk.',
     permissionMode: 'plan',
-    skillKeywords: ['review', 'code review', 'testing', 'quality', 'architecture'],
     rules: `
 You are the Code Reviewer.
 
@@ -232,38 +229,24 @@ export function teamRoleAssistantId(baseAssistantId: string, specialty: Provisio
   return `team-role:${baseAssistantId}:${specialty}`;
 }
 
-function normalizedSkillText(value: string): string {
-  return value.toLocaleLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-function skillScore(skill: SkillInfo, keywords: string[]): number {
-  const name = normalizedSkillText(skill.name);
-  const description = normalizedSkillText(skill.description || '');
-  let score = 0;
-
-  for (const rawKeyword of keywords) {
-    const keyword = normalizedSkillText(rawKeyword);
-    if (!keyword) continue;
-    if (name === keyword) score += 12;
-    else if (name.includes(keyword)) score += 7;
-    if (description.includes(keyword)) score += 2;
-  }
-
-  return score;
-}
-
 export function resolveTeamRoleSkills(
   specialty: ProvisionableTeamMemberSpecialty,
   availableSkills: SkillInfo[],
-  maxSkills = 4
+  maxSkills?: number
 ): SkillInfo[] {
-  const keywords = TEAM_ROLE_PROFILES[specialty].skillKeywords;
-  return availableSkills
-    .map((skill) => ({ skill, score: skillScore(skill, keywords) }))
-    .filter((entry) => entry.score > 0 && !entry.skill.is_auto_inject)
-    .sort((a, b) => b.score - a.score || a.skill.name.localeCompare(b.skill.name))
-    .slice(0, maxSkills)
-    .map((entry) => entry.skill);
+  const allowedNames = teamRoleAllowedSkillNames(specialty);
+  const availableByName = new Map(availableSkills.map((skill) => [skill.name, skill]));
+  const limit = maxSkills ?? allowedNames.length;
+
+  return allowedNames
+    .map((name) => availableByName.get(name))
+    .filter(
+      (skill): skill is SkillInfo =>
+        Boolean(skill) &&
+        !skill!.is_auto_inject &&
+        !TEAM_ROLE_AUTO_BLOCKED_SKILLS.has(skill!.name)
+    )
+    .slice(0, limit);
 }
 
 export type TeamRoleProfileDeps = {
@@ -335,18 +318,16 @@ export async function provisionTeamRoleAssistant(
     deps.listAvailableSkills(),
   ]);
   const matchedSkills = resolveTeamRoleSkills(input.specialty, availableSkills);
-  const skillNames = Array.from(
-    new Set([...(baseDetail.capabilities.default_skill_ids ?? []), ...matchedSkills.map((skill) => skill.name)])
-  );
-  const customSkillNames = Array.from(
-    new Set([
-      ...(baseDetail.capabilities.custom_skill_names ?? []),
-      ...matchedSkills.filter((skill) => skill.is_custom).map((skill) => skill.name),
-    ])
-  );
+  // Managed Team roles use a curated exact-name catalog. Do not inherit arbitrary
+  // base-assistant skills: that is how unrelated office/presentation skills can
+  // leak into PM/Dev/QA profiles.
+  const skillNames = matchedSkills.map((skill) => skill.name);
+  const customSkillNames = matchedSkills
+    .filter((skill) => skill.is_custom)
+    .map((skill) => skill.name);
   const disabledBuiltinSkills = baseDetail.capabilities.default_disabled_builtin_skill_ids ?? [];
   const name = `${base.name} ${profile.label}`;
-  const description = `[Team Role Profile v1] ${profile.description}`;
+  const description = `[Team Role Profile v2 / curated skills] ${profile.description}`;
   const defaults = cloneBaseDefaults(baseDetail, skillNames, profile.permissionMode);
 
   const existing = assistants.find((assistant) => assistant.id === roleAssistantId);
