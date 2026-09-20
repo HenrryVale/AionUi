@@ -378,6 +378,18 @@ describe('team role profiles', () => {
     expect(snapshot.automaticRiskPolicy.explicitlyDeniedSkills.sort()).toEqual(
       ['canvas-design', 'design-taste-frontend', 'webapp-testing'].sort()
     );
+    expect(
+      JSON.parse(
+        fs.readFileSync(
+          'packages/desktop/src/renderer/pages/team/components/memberPicker/teamRoleSkillPolicy.snapshot.json',
+          'utf8'
+        )
+      ).selection
+    ).toMatchObject({
+      mode: 'exact-name-only',
+      inheritBaseAssistantSkills: false,
+      missingSkillBehavior: 'managed-direct-source-fail-closed',
+    });
   });
 
   it('selects only exact allowlisted skills in policy order', () => {
