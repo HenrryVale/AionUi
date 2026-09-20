@@ -48,7 +48,7 @@ ARG AIONCORE_COMMIT
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       build-essential ca-certificates cmake git perl pkg-config python3 \
+       build-essential ca-certificates clang cmake git libclang-dev nasm perl pkg-config python3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src/aioncore
