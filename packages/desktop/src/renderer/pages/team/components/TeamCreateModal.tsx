@@ -17,6 +17,11 @@ import { resolveDefaultTeamAgentModel } from './teamCreateModelResolver';
 import TeamAssistantPicker from './memberPicker/TeamAssistantPicker';
 import TeamAssistantPickerDropdown from './memberPicker/TeamAssistantPickerDropdown';
 import TeamMemberDraftList, { type TeamMemberDraft } from './memberPicker/TeamMemberDraftList';
+import {
+  composeTeamMemberName,
+  duplicateTeamMemberNames,
+  nextAvailableTeamMemberName,
+} from './memberPicker/teamMemberIdentity';
 
 // [E2E SYNC] 修改此组件的 DOM 结构（class、标题、关闭按钮等）时，
 // 必须同步更新 tests/e2e/cases/teams/team-create.e2e.ts、team-whitelist.e2e.ts、
@@ -62,9 +67,14 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
   };
 
   const handleSelectAssistant = (assistant: TeamAssistantOption) => {
-    const draft = {
+    const existingNames = selectedMembers.map((member) =>
+      composeTeamMemberName(member.memberName, member.specialty)
+    );
+    const draft: TeamMemberDraft = {
       selectionId: `${assistant.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       assistant,
+      memberName: nextAvailableTeamMemberName(assistant.name, existingNames),
+      specialty: 'general',
     };
     setSelectedMembers((members) => [...members, draft]);
     setLeaderSelectionId((current) => current ?? draft.selectionId);
@@ -76,6 +86,15 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
     if (leaderSelectionId === selectionId) {
       setLeaderSelectionId(nextMembers[0]?.selectionId);
     }
+  };
+
+  const handleUpdateDraft = (
+    selectionId: string,
+    patch: Partial<Pick<TeamMemberDraft, 'memberName' | 'specialty'>>
+  ) => {
+    setSelectedMembers((members) =>
+      members.map((member) => (member.selectionId === selectionId ? { ...member, ...patch } : member))
+    );
   };
 
   const handleCreate = async () => {
@@ -92,6 +111,27 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
       Message.warning(t('team.create.selectOneLeader', { defaultValue: 'Select one Team Leader' }));
       return;
     }
+
+    const memberNames = selectedMembers.map((member) =>
+      composeTeamMemberName(member.memberName, member.specialty)
+    );
+    if (memberNames.some((memberName) => !memberName.trim())) {
+      Message.warning(
+        t('team.create.memberNameRequired', { defaultValue: 'Every team member needs a name.' })
+      );
+      return;
+    }
+    const duplicateNames = duplicateTeamMemberNames(memberNames);
+    if (duplicateNames.length > 0) {
+      Message.warning(
+        t('team.create.memberNameUnique', {
+          defaultValue: `Team member names must be unique: ${duplicateNames.join(', ')}`,
+          names: duplicateNames.join(', '),
+        })
+      );
+      return;
+    }
+
     const user_id = user?.id ?? 'system_default_user';
     setLoading(true);
     try {
@@ -113,7 +153,7 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
       const modelBySelectionId = new Map(resolvedModels);
       const agents: TeamAssistantInput[] = selectedMembers.map((member) => ({
         role: member.selectionId === leaderSelectionId ? 'leader' : 'teammate',
-        assistant_name: member.assistant.name,
+        assistant_name: composeTeamMemberName(member.memberName, member.specialty),
         assistant_id: member.assistant.id,
         model: modelBySelectionId.get(member.selectionId),
       }));
@@ -222,6 +262,7 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
           leaderSelectionId={leaderSelectionId}
           onLeaderChange={setLeaderSelectionId}
           onRemove={handleRemoveDraft}
+          onUpdate={handleUpdateDraft}
         />
         <div className='mt-14px shrink-0 border-t border-border-2 pt-14px'>{teamFields}</div>
       </section>
@@ -265,6 +306,7 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
           leaderSelectionId={leaderSelectionId}
           onLeaderChange={setLeaderSelectionId}
           onRemove={handleRemoveDraft}
+          onUpdate={handleUpdateDraft}
           headerAction={addMemberDropdown}
           listBoxClassName='!max-h-[38vh]'
         />
