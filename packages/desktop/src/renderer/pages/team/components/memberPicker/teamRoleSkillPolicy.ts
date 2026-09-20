@@ -59,11 +59,10 @@ export const TEAM_ROLE_SKILL_POLICIES: Record<
     skills: ['ship-gate'],
   },
   architect: {
-    skills: ['architecture', 'security-gate', 'prompt-injection-gate', 'ship-gate'],
+    skills: ['security-gate', 'prompt-injection-gate', 'ship-gate'],
   },
   backend: {
     skills: [
-      'testing',
       'debug-gate',
       'test-first-gate',
       'security-gate',
@@ -93,7 +92,6 @@ export const TEAM_ROLE_SKILL_POLICIES: Record<
   },
   fullstack: {
     skills: [
-      'testing',
       'skill-design',
       'frontend-design',
       'web-artifact-builder',
@@ -105,7 +103,7 @@ export const TEAM_ROLE_SKILL_POLICIES: Record<
     ],
   },
   qa: {
-    skills: ['testing', 'ship-gate'],
+    skills: ['ship-gate'],
   },
   security: {
     skills: ['security-gate', 'prompt-injection-gate', 'ship-gate'],
@@ -114,7 +112,7 @@ export const TEAM_ROLE_SKILL_POLICIES: Record<
     skills: ['debug-gate', 'security-gate', 'prompt-injection-gate', 'ship-gate'],
   },
   reviewer: {
-    skills: ['architecture', 'testing', 'ship-gate'],
+    skills: ['ship-gate'],
   },
 };
 
