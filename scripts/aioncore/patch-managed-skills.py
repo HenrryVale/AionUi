@@ -270,6 +270,7 @@ mod managed_skill_security_tests {
         let mutable_root = tmp.path().join("mutable");
         let managed = write_skill(&managed_root, "ship-gate", "MANAGED");
         let mutable = write_skill(&mutable_root, "ship-gate", "MUTABLE");
+        let mutable_path = mutable.to_string_lossy().into_owned();
 
         let db = aionui_db::init_database_memory().await.unwrap();
         let repo = SqliteSkillRepository::new(db.pool().clone());
@@ -278,7 +279,7 @@ mod managed_skill_security_tests {
             UpsertSkillParams {
                 name: "ship-gate",
                 description: Some("mutable"),
-                path: mutable.to_string_lossy().as_ref(),
+                path: &mutable_path,
                 source: "user",
                 enabled: true,
             },
@@ -306,6 +307,7 @@ mod managed_skill_security_tests {
         std::fs::create_dir_all(&managed_root).unwrap();
         let mutable_root = tmp.path().join("mutable");
         let custom = write_skill(&mutable_root, "my-custom", "CUSTOM");
+        let custom_path = custom.to_string_lossy().into_owned();
 
         let db = aionui_db::init_database_memory().await.unwrap();
         let repo = SqliteSkillRepository::new(db.pool().clone());
@@ -314,7 +316,7 @@ mod managed_skill_security_tests {
             UpsertSkillParams {
                 name: "my-custom",
                 description: Some("custom"),
-                path: custom.to_string_lossy().as_ref(),
+                path: &custom_path,
                 source: "user",
                 enabled: true,
             },
