@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
 import type { SkillInfo } from '@/renderer/pages/settings/AssistantSettings/types';
 import {
+  ensureTeamRoleSkills,
   provisionTeamRoleAssistant,
   resolveTeamRoleSkills,
   teamRoleAssistantId,
@@ -10,6 +11,7 @@ import {
 import {
   TEAM_ROLE_SKILL_POLICIES,
   TEAM_ROLE_SKILL_POLICY_SOURCE,
+  teamRoleSkillBundlePath,
 } from '@/renderer/pages/team/components/memberPicker/teamRoleSkillPolicy';
 
 const baseAssistant: Assistant = {
@@ -258,6 +260,26 @@ const skills: SkillInfo[] = [
   },
 ];
 
+const shipGate = skills.find((skill) => skill.name === 'ship-gate')!;
+
+function managedHistory(names: string[]) {
+  return names.map((name, index) => ({
+    skill_name: name,
+    source_path: teamRoleSkillBundlePath(name),
+    status: 'imported',
+    created_at: 1000 + index,
+  }));
+}
+
+function managedQaSkillDeps() {
+  return {
+    listSkillImportHistory: vi.fn(async () => managedHistory(['ship-gate'])),
+    importSkill: vi.fn(async (skillPath: string) => ({
+      skill_name: skillPath.split('/').pop()!,
+    })),
+  };
+}
+
 describe('team role profiles', () => {
   it('uses deterministic reusable assistant ids', () => {
     expect(teamRoleAssistantId('bare:claude', 'qa')).toBe('team-role:bare:claude:qa');
@@ -299,15 +321,12 @@ describe('team role profiles', () => {
 
   it('pins the curated skill policy to the audited skill-design snapshot', () => {
     expect(TEAM_ROLE_SKILL_POLICY_SOURCE.repository).toBe('HenrryVale/skill-design');
-    expect(TEAM_ROLE_SKILL_POLICY_SOURCE.commit).toBe('895e916d9c2becf662a2cab57a133a36212c1112');
+    expect(TEAM_ROLE_SKILL_POLICY_SOURCE.commit).toBe('2fc19a167312c62022fe813490e52852c4afc0ff');
     expect(TEAM_ROLE_SKILL_POLICY_SOURCE.rolePolicy).toBe('pack/aionui-team-roles.json');
   });
 
   it('selects only exact allowlisted skills in policy order', () => {
-    expect(resolveTeamRoleSkills('qa', skills).map((skill) => skill.name)).toEqual([
-      'testing',
-      'ship-gate',
-    ]);
+    expect(resolveTeamRoleSkills('qa', skills).map((skill) => skill.name)).toEqual(['ship-gate']);
     expect(resolveTeamRoleSkills('security', skills).map((skill) => skill.name)).toEqual([
       'security-gate',
       'prompt-injection-gate',
@@ -351,15 +370,107 @@ describe('team role profiles', () => {
   });
 
   it('does not explicitly select a curated skill when that concrete skill is auto-injected', () => {
-    const autoTesting: SkillInfo = { ...skills[1], is_auto_inject: true };
-    expect(resolveTeamRoleSkills('qa', [autoTesting]).map((skill) => skill.name)).toEqual([]);
+    const autoShipGate: SkillInfo = { ...shipGate, is_auto_inject: true };
+    expect(resolveTeamRoleSkills('qa', [autoShipGate]).map((skill) => skill.name)).toEqual([]);
+  });
+
+  it('keeps project-specific workspace skills out of global role defaults', () => {
+    expect(TEAM_ROLE_SKILL_POLICIES.qa.skills).not.toContain('testing');
+    expect(TEAM_ROLE_SKILL_POLICIES.architect.skills).not.toContain('architecture');
+    expect(resolveTeamRoleSkills('qa', skills).map((skill) => skill.name)).not.toContain('testing');
   });
 
   it('keeps broad availability separate from per-task routing limits', () => {
     expect(TEAM_ROLE_SKILL_POLICIES.frontend.skills).toHaveLength(16);
     expect(TEAM_ROLE_SKILL_POLICIES.frontend.skills[0]).toBe('skill-design');
-    expect(TEAM_ROLE_SKILL_POLICIES.backend.skills).toHaveLength(6);
-    expect(TEAM_ROLE_SKILL_POLICIES.qa.skills).toEqual(['testing', 'ship-gate']);
+    expect(TEAM_ROLE_SKILL_POLICIES.backend.skills).toHaveLength(5);
+    expect(TEAM_ROLE_SKILL_POLICIES.qa.skills).toEqual(['ship-gate']);
+  });
+
+  describe('managed role skill provenance', () => {
+    it('imports a missing role skill from the exact immutable bundle path', async () => {
+      const listAvailableSkills = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([shipGate]);
+      const importSkill = vi.fn(async (skillPath: string) => ({
+        skill_name: skillPath.split('/').pop()!,
+      }));
+
+      const resolved = await ensureTeamRoleSkills('qa', {
+        listAvailableSkills,
+        listSkillImportHistory: vi.fn(async () => []),
+        importSkill,
+      });
+
+      expect(importSkill).toHaveBeenCalledOnce();
+      expect(importSkill).toHaveBeenCalledWith(teamRoleSkillBundlePath('ship-gate'));
+      expect(resolved.map((skill) => skill.name)).toEqual(['ship-gate']);
+    });
+
+    it('reuses a skill whose latest successful import came from the pinned bundle', async () => {
+      const importSkill = vi.fn();
+
+      const resolved = await ensureTeamRoleSkills('qa', {
+        listAvailableSkills: vi.fn(async () => [shipGate]),
+        listSkillImportHistory: vi.fn(async () => managedHistory(['ship-gate'])),
+        importSkill,
+      });
+
+      expect(importSkill).not.toHaveBeenCalled();
+      expect(resolved.map((skill) => skill.name)).toEqual(['ship-gate']);
+    });
+
+    it('upgrades a skill imported from an older managed bundle revision', async () => {
+      const importSkill = vi.fn(async () => ({ skill_name: 'ship-gate' }));
+      const listAvailableSkills = vi.fn(async () => [shipGate]);
+
+      await ensureTeamRoleSkills('qa', {
+        listAvailableSkills,
+        listSkillImportHistory: vi.fn(async () => [
+          {
+            skill_name: 'ship-gate',
+            source_path: '/app/team-skills/old-revision/ship-gate',
+            status: 'imported',
+            created_at: 100,
+          },
+        ]),
+        importSkill,
+      });
+
+      expect(importSkill).toHaveBeenCalledWith(teamRoleSkillBundlePath('ship-gate'));
+    });
+
+    it('fails closed on an unmanaged same-name skill instead of trusting the name', async () => {
+      const importSkill = vi.fn();
+
+      await expect(
+        ensureTeamRoleSkills('qa', {
+          listAvailableSkills: vi.fn(async () => [shipGate]),
+          listSkillImportHistory: vi.fn(async () => [
+            {
+              skill_name: 'ship-gate',
+              source_path: '/workspace/untrusted/ship-gate',
+              status: 'imported',
+              created_at: 500,
+            },
+          ]),
+          importSkill,
+        })
+      ).rejects.toThrow('Team role skill provenance conflict for ship-gate');
+
+      expect(importSkill).not.toHaveBeenCalled();
+    });
+
+    it('fails if the backend reports an import but the skill is still unavailable', async () => {
+      await expect(
+        ensureTeamRoleSkills('qa', {
+          listAvailableSkills: vi.fn(async () => []),
+          listSkillImportHistory: vi.fn(async () => []),
+          importSkill: vi.fn(async () => ({ skill_name: 'ship-gate' })),
+        })
+      ).rejects.toThrow('Managed Team role skills are unavailable after import for qa: ship-gate');
+    });
   });
 
   it('does not inherit arbitrary base-assistant skills into a managed role', async () => {
@@ -388,16 +499,17 @@ describe('team role profiles', () => {
         updateAssistant: vi.fn(),
         setAssistantState: vi.fn(async () => undefined),
         listAvailableSkills: vi.fn(async () => skills),
+        ...managedQaSkillDeps(),
         writeAssistantRule: vi.fn(async () => undefined),
       }
     );
 
     expect(createAssistant).toHaveBeenCalledWith(
       expect.objectContaining({
-        enabled_skills: ['testing', 'ship-gate'],
+        enabled_skills: ['ship-gate'],
         custom_skill_names: ['ship-gate'],
         defaults: expect.objectContaining({
-          skills: { mode: 'fixed', value: ['testing', 'ship-gate'] },
+          skills: { mode: 'fixed', value: ['ship-gate'] },
         }),
       })
     );
@@ -432,12 +544,12 @@ describe('team role profiles', () => {
         id: 'team-role:bare:claude:qa',
         name: 'Claude QA',
         agent_id: 'claude-agent',
-        enabled_skills: ['testing', 'ship-gate'],
+        enabled_skills: ['ship-gate'],
         custom_skill_names: ['ship-gate'],
         defaults: expect.objectContaining({
           model: { mode: 'fixed', value: 'claude-sonnet' },
           permission: { mode: 'fixed', value: 'plan' },
-          skills: { mode: 'fixed', value: ['testing', 'ship-gate'] },
+          skills: { mode: 'fixed', value: ['ship-gate'] },
         }),
       })
     );
@@ -466,6 +578,7 @@ describe('team role profiles', () => {
         updateAssistant,
         setAssistantState: vi.fn(async () => undefined),
         listAvailableSkills: vi.fn(async () => skills),
+        ...managedQaSkillDeps(),
         writeAssistantRule: vi.fn(async () => undefined),
       }
     );
@@ -474,7 +587,7 @@ describe('team role profiles', () => {
     expect(updateAssistant).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'team-role:bare:claude:qa',
-        enabled_skills: ['testing', 'ship-gate'],
+        enabled_skills: ['ship-gate'],
         custom_skill_names: ['ship-gate'],
       })
     );
