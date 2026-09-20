@@ -331,6 +331,12 @@ describe('team role profiles', () => {
     expect(dockerfile).toContain(
       'COPY --from=builder /opt/aionui-team-skills-versioned/ /app/team-skills/'
     );
+    expect(dockerfile).toContain(
+      'RUN --mount=type=secret,id=gh_token,required=true'
+    );
+    expect(dockerfile).toContain(
+      'git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $GH_AUTH"'
+    );
     expect(TEAM_ROLE_SKILL_BUNDLE_ROOT).toBe(
       `/app/team-skills/${TEAM_ROLE_SKILL_POLICY_SOURCE.commit}`
     );
