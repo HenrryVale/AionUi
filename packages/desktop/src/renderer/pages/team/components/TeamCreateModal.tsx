@@ -22,7 +22,8 @@ import {
   duplicateTeamMemberNames,
   nextAvailableTeamMemberName,
 } from './memberPicker/teamMemberIdentity';
-import { ensureTeamRoleAssistant } from './memberPicker/teamRoleProfiles';
+import { ensureTeamRoleAssistant, TEAM_ROLE_PROFILES } from './memberPicker/teamRoleProfiles';
+import { enforceTeamRolePermissionModes } from './memberPicker/teamRolePermissions';
 
 // [E2E SYNC] 修改此组件的 DOM 结构（class、标题、关闭按钮等）时，
 // 必须同步更新 tests/e2e/cases/teams/team-create.e2e.ts、team-whitelist.e2e.ts、
@@ -134,6 +135,7 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
     }
 
     const user_id = user?.id ?? 'system_default_user';
+    let createdTeam: TTeam | null = null;
     setLoading(true);
     try {
       const assistantIdBySelectionId = new Map<string, string>();
@@ -196,10 +198,35 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
         Message.error(getConversationCreateErrorMessage(result.message ?? t('team.create.error'), t));
         return;
       }
+      createdTeam = team;
+
+      const rolePermissionAssignments = selectedMembers.flatMap((member) => {
+        if (member.specialty === 'general') return [];
+        const assistantId = assistantIdBySelectionId.get(member.selectionId);
+        if (!assistantId) {
+          throw new Error(`Missing provisioned role assistant for ${member.assistant.name}`);
+        }
+        return [
+          {
+            assistantId,
+            assistantName: composeTeamMemberName(member.memberName, member.specialty),
+            mode: TEAM_ROLE_PROFILES[member.specialty].permissionMode,
+          },
+        ];
+      });
+
+      await enforceTeamRolePermissionModes(team, rolePermissionAssignments);
 
       onCreated(team);
       handleClose();
     } catch (error) {
+      if (createdTeam) {
+        try {
+          await ipcBridge.team.remove.invoke({ id: createdTeam.id });
+        } catch (cleanupError) {
+          console.error('[TeamCreate] Failed to rollback team after role permission setup error:', cleanupError);
+        }
+      }
       Message.error(getConversationCreateErrorMessage(error, t));
     } finally {
       setLoading(false);
