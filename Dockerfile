@@ -38,7 +38,7 @@
 #   docker run --rm --user 0 -v "$(pwd)/data:/data" aionui-web \
 #       chown 10001:10001 /data
 #
-ARG SKILL_DESIGN_COMMIT=75e78abdf42deee73cbe51199806afdb8eebf539
+ARG SKILL_DESIGN_COMMIT=8fea33732ab971bcc5488694de0f2cd99673244e
 ARG AIONCORE_COMMIT=47e66d0d151123e973b3fd1e77afcb5671b3f8c5
 
 # ---- Patched AionCore --------------------------------------------------------
