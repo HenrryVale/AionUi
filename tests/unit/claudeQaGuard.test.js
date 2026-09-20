@@ -49,6 +49,9 @@ describe('Claude QA capability guard', () => {
 
     expect(evaluate('Read', { file_path: '/data/aionui-backend.db' }).decision).toBe('deny');
     expect(evaluate('Grep', { path: '/home/aionui', pattern: 'token' }).decision).toBe('deny');
+    expect(evaluate('Glob', { pattern: '../../data/**' }).decision).toBe('deny');
+    expect(evaluate('Glob', { pattern: '/data/**' }).decision).toBe('deny');
+    expect(evaluate('Grep', { glob: '../*.env', pattern: 'token' }).decision).toBe('deny');
   });
 
   it('denies execution, mutation and delegation tools fail-closed', () => {
