@@ -81,7 +81,7 @@ WORKDIR /app
 # curl/tar/unzip are used by scripts/prepare-aioncore.js to fetch and unpack the
 # backend release asset; ca-certificates is required for the HTTPS download.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl git python3 tar unzip \
+    && apt-get install -y --no-install-recommends ca-certificates curl gh git python3 tar unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Pinned so image builds stay reproducible (the workflow tracks bun latest).
@@ -117,26 +117,16 @@ RUN bun install --frozen-lockfile --ignore-scripts
 # never from the mutable /workspace bind mount.
 RUN --mount=type=secret,id=gh_token,required=true \
     set -eu; \
-    GH_TOKEN="$(cat /run/secrets/gh_token)"; \
-    test -n "$GH_TOKEN"; \
-    GH_AUTH="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\\n')"; \
+    test -s /run/secrets/gh_token; \
     mkdir -p /opt/skill-design; \
-    git -C /opt/skill-design init -q; \
-    git -C /opt/skill-design remote add origin https://github.com/HenrryVale/skill-design.git; \
-    FETCH_ATTEMPT=1; \
-    while :; do \
-      if git -c http.version=HTTP/1.1 \
-        -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $GH_AUTH" \
-        -C /opt/skill-design fetch --depth 1 origin "$SKILL_DESIGN_COMMIT"; then \
-        break; \
-      fi; \
-      test "$FETCH_ATTEMPT" -lt 3 || exit 1; \
-      FETCH_ATTEMPT=$((FETCH_ATTEMPT + 1)); \
-      sleep "$FETCH_ATTEMPT"; \
-    done; \
-    unset GH_AUTH GH_TOKEN; \
-    git -C /opt/skill-design checkout -q --detach FETCH_HEAD; \
-    test "$(git -C /opt/skill-design rev-parse HEAD)" = "$SKILL_DESIGN_COMMIT"; \
+    RESOLVED_SHA="$(GH_TOKEN="$(cat /run/secrets/gh_token)" \
+      gh api "repos/HenrryVale/skill-design/commits/$SKILL_DESIGN_COMMIT" --jq .sha)"; \
+    test "$RESOLVED_SHA" = "$SKILL_DESIGN_COMMIT"; \
+    GH_TOKEN="$(cat /run/secrets/gh_token)" \
+      gh api "repos/HenrryVale/skill-design/tarball/$SKILL_DESIGN_COMMIT" \
+      > /tmp/skill-design.tar.gz; \
+    tar -xzf /tmp/skill-design.tar.gz --strip-components=1 -C /opt/skill-design; \
+    rm -f /tmp/skill-design.tar.gz; \
     python3 /opt/skill-design/scripts/validate.py; \
     python3 /opt/skill-design/scripts/stage_aionui_team.py /opt/aionui-team-skills --force; \
     test "$(find /opt/aionui-team-skills/bundle -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 17; \
