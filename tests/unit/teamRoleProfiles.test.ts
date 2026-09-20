@@ -335,8 +335,12 @@ describe('team role profiles', () => {
       'RUN --mount=type=secret,id=gh_token,required=true'
     );
     expect(dockerfile).toContain(
-      'git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $GH_AUTH"'
+      'gh api "repos/HenrryVale/skill-design/commits/$SKILL_DESIGN_COMMIT" --jq .sha'
     );
+    expect(dockerfile).toContain(
+      'gh api "repos/HenrryVale/skill-design/tarball/$SKILL_DESIGN_COMMIT"'
+    );
+    expect(dockerfile).not.toContain('x-access-token:%s');
     expect(TEAM_ROLE_SKILL_BUNDLE_ROOT).toBe(
       `/app/team-skills/${TEAM_ROLE_SKILL_POLICY_SOURCE.commit}`
     );
