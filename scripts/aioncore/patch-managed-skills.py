@@ -400,11 +400,43 @@ fn managed_team_role_session_mode(
 
     ptext = replace_once(
         ptext,
-        "                    session_mode: row.session_mode.clone(),\n",
-        "                    session_mode: managed_team_role_session_mode(req.assistant_id.as_deref())?\n"
-        "                        .map(str::to_owned)\n"
-        "                        .or(row.session_mode.clone()),\n",
-        "spawned role session seed",
+        "        let mcp_selection = self\n"
+        "            .resolve_assistant_mcp_selection(user_id, assistant_id.as_deref())\n"
+        "            .await?;\n"
+        "        let agent = self\n",
+        "        let mcp_selection = self\n"
+        "            .resolve_assistant_mcp_selection(user_id, assistant_id.as_deref())\n"
+        "            .await?;\n"
+        "        let role_session_mode = managed_team_role_session_mode(assistant_id.as_deref())?\n"
+        "            .map(str::to_owned);\n"
+        "        let agent = self\n",
+        "add-agent role session seed",
+    )
+
+    ptext = replace_once(
+        ptext,
+        "        let mcp_selection = self\n"
+        "            .resolve_assistant_mcp_selection(&req.user_id, req.assistant_id.as_deref())\n"
+        "            .await?;\n"
+        "        let agent = self\n",
+        "        let mcp_selection = self\n"
+        "            .resolve_assistant_mcp_selection(&req.user_id, req.assistant_id.as_deref())\n"
+        "            .await?;\n"
+        "        let role_session_mode = managed_team_role_session_mode(req.assistant_id.as_deref())?\n"
+        "            .map(str::to_owned);\n"
+        "        let agent = self\n",
+        "spawn-agent role session seed",
+    )
+
+    old_seed = "                    session_mode: row.session_mode.clone(),\n"
+    if ptext.count(old_seed) != 2:
+        fail(
+            "managed Team role session seed: expected exactly two anchors, "
+            f"found {ptext.count(old_seed)}"
+        )
+    ptext = ptext.replace(
+        old_seed,
+        "                    session_mode: role_session_mode.or(row.session_mode.clone()),\n",
     )
 
     old_runtime_mode = (
