@@ -47,6 +47,12 @@ FROM rust:1.95.0-slim-bookworm AS aioncore-builder
 
 ARG AIONCORE_COMMIT
 
+# This image is built on a low-power N150 host. Keep Rust/C native builds
+# deliberately serialized so aioncore does not monopolize the machine.
+ENV CARGO_BUILD_JOBS=1 \
+    CMAKE_BUILD_PARALLEL_LEVEL=1 \
+    MAKEFLAGS=-j1
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        build-essential ca-certificates clang cmake git libclang-dev nasm perl pkg-config python3 \
