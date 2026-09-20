@@ -96,6 +96,11 @@ describe('team role profiles', () => {
     expect(resolveTeamRoleSkills('security', skills).map((skill) => skill.name)).toEqual(['security-review']);
   });
 
+  it('does not explicitly select builtin skills that are already auto-injected', () => {
+    const autoTesting: SkillInfo = { ...skills[1], name: 'testing-auto', is_auto_inject: true };
+    expect(resolveTeamRoleSkills('qa', [autoTesting]).map((skill) => skill.name)).toEqual([]);
+  });
+
   it('creates a role assistant with copied runtime defaults, skills and persistent rules', async () => {
     const createAssistant = vi.fn(async (request) => ({
       ...baseAssistant,
