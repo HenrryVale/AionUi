@@ -101,6 +101,45 @@ describe('team role profiles', () => {
     expect(resolveTeamRoleSkills('qa', [autoTesting]).map((skill) => skill.name)).toEqual([]);
   });
 
+  it('inherits base assistant skills and adds role-specific skills', async () => {
+    const detailWithBaseSkill = {
+      ...baseDetail,
+      capabilities: {
+        ...baseDetail.capabilities,
+        default_skill_ids: ['architecture'],
+      },
+    };
+    const createAssistant = vi.fn(async (request) => ({
+      ...baseAssistant,
+      id: request.id!,
+      name: request.name,
+      source: 'user' as const,
+      enabled_skills: request.enabled_skills ?? [],
+    }));
+
+    await provisionTeamRoleAssistant(
+      { baseAssistantId: baseAssistant.id, specialty: 'qa' },
+      {
+        listAssistants: vi.fn(async () => [baseAssistant]),
+        getAssistant: vi.fn(async () => detailWithBaseSkill),
+        createAssistant,
+        updateAssistant: vi.fn(),
+        setAssistantState: vi.fn(async () => undefined),
+        listAvailableSkills: vi.fn(async () => skills),
+        writeAssistantRule: vi.fn(async () => undefined),
+      }
+    );
+
+    expect(createAssistant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        enabled_skills: ['architecture', 'testing'],
+        defaults: expect.objectContaining({
+          skills: { mode: 'fixed', value: ['architecture', 'testing'] },
+        }),
+      })
+    );
+  });
+
   it('creates a role assistant with copied runtime defaults, skills and persistent rules', async () => {
     const createAssistant = vi.fn(async (request) => ({
       ...baseAssistant,
