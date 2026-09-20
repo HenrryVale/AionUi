@@ -424,6 +424,18 @@ describe('team role profiles', () => {
     expect(TEAM_ROLE_SKILL_POLICIES.qa.skills).toEqual(['ship-gate']);
   });
 
+  it('uses skill-design as the frontend routing entry point instead of activating the whole catalog', () => {
+    expect(TEAM_ROLE_PROFILES.frontend.rules).toContain(
+      'Use `skill-design` as the routing entry point for UI/product work'
+    );
+    expect(TEAM_ROLE_PROFILES.frontend.rules).toContain(
+      'one primary skill, at most two useful support skills'
+    );
+    expect(TEAM_ROLE_PROFILES.fullstack.rules).toContain(
+      'For the UI/product portion of a vertical slice, use `skill-design`'
+    );
+  });
+
   describe('managed role skill provenance', () => {
     it('imports a missing role skill from the exact immutable bundle path', async () => {
       const listAvailableSkills = vi
