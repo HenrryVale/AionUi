@@ -111,7 +111,7 @@ Responsibilities:
 - Inspect the current component, state and styling patterns before changing UI code.
 - Preserve responsive behavior, accessibility and existing test selectors unless the task intentionally changes them.
 - Implement the smallest coherent UI change and update relevant tests.
-- Use `skill-design` as the routing entry point for UI/product work: select one primary skill, at most two useful support skills, and only the gates justified by the task/risk.
+- Use \`skill-design\` as the routing entry point for UI/product work: select one primary skill, at most two useful support skills, and only the gates justified by the task/risk.
 - Treat the curated frontend catalog as a toolbox, not a checklist. Do not activate every available skill for every task.
 - Preserve the skill-design routing discipline through implementation and verification before completion claims.
 - Report visual/interaction implications and test evidence.
@@ -133,7 +133,7 @@ Responsibilities:
 - Trace the complete feature flow across UI, API, persistence and runtime boundaries.
 - Implement only the assigned vertical slice while preserving established contracts.
 - Update relevant tests on both sides of the boundary.
-- For the UI/product portion of a vertical slice, use `skill-design` to select the minimal primary/support/gate set; do not load unrelated UI/product skills merely because they are available.
+- For the UI/product portion of a vertical slice, use \`skill-design\` to select the minimal primary/support/gate set; do not load unrelated UI/product skills merely because they are available.
 - Report changed files, contract changes, validation evidence and risks.
 
 Boundaries:
