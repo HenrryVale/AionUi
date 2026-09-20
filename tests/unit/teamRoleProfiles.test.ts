@@ -345,10 +345,10 @@ describe('team role profiles', () => {
       'COPY scripts/aioncore/patch-managed-skills.py /tmp/patch-managed-skills.py'
     );
     expect(dockerfile).toContain(
-      'cargo test -p aionui-extension managed_skill_security_tests'
+      'cargo test --locked -p aionui-extension managed_skill_security_tests'
     );
     expect(dockerfile).toContain(
-      'cargo test -p aionui-db --test agent_skill_delivery_migration'
+      'cargo test --locked -p aionui-db --test agent_skill_delivery_migration'
     );
     expect(dockerfile).toContain(
       'COPY --from=aioncore-builder /src/aioncore/target/release/aioncore /tmp/aioncore-managed-skills'
