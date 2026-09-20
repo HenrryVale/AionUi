@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "purpose": "Pinned exact-name skill policy for HenrryVale/AionUi Team role assistants.",
+  "selection": {
+    "mode": "exact-name-only",
+    "inheritBaseAssistantSkills": false,
+    "missingSkillBehavior": "omit-without-fuzzy-fallback",
+    "taskRouting": "skill-design-primary-plus-supports-and-gates"
+  },
+  "automaticRiskPolicy": {
+    "allowed": [
+      "pass",
+      "pass-warn",
+      "local"
+    ],
+    "denied": [
+      "warn",
+      "block"
+    ],
+    "explicitlyDeniedSkills": [
+      "canvas-design",
+      "design-taste-frontend",
+      "webapp-testing"
+    ]
+  },
+  "roles": {
+    "pm": {
+      "curated": [
+        "ship-gate"
+      ]
+    },
+    "architect": {
+      "curated": [
+        "security-gate",
+        "prompt-injection-gate",
+        "ship-gate"
+      ]
+    },
+    "backend": {
+      "curated": [
+        "debug-gate",
+        "test-first-gate",
+        "security-gate",
+        "prompt-injection-gate",
+        "ship-gate"
+      ]
+    },
+    "frontend": {
+      "curated": [
+        "skill-design",
+        "frontend-design",
+        "refactoring-ui",
+        "ui-ux-pro-max",
+        "ux-heuristics",
+        "web-typography",
+        "microinteractions",
+        "theme-factory",
+        "web-motion-toolkit",
+        "web-artifact-builder",
+        "generative-art",
+        "business-identity-gate",
+        "prompt-injection-gate",
+        "test-first-gate",
+        "security-gate",
+        "ship-gate"
+      ]
+    },
+    "fullstack": {
+      "curated": [
+        "skill-design",
+        "frontend-design",
+        "web-artifact-builder",
+        "debug-gate",
+        "test-first-gate",
+        "security-gate",
+        "prompt-injection-gate",
+        "ship-gate"
+      ]
+    },
+    "qa": {
+      "curated": [
+        "ship-gate"
+      ]
+    },
+    "security": {
+      "curated": [
+        "security-gate",
+        "prompt-injection-gate",
+        "ship-gate"
+      ]
+    },
+    "devops": {
+      "curated": [
+        "debug-gate",
+        "security-gate",
+        "prompt-injection-gate",
+        "ship-gate"
+      ]
+    },
+    "reviewer": {
+      "curated": [
+        "ship-gate"
+      ]
+    }
+  }
+}
