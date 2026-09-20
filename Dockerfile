@@ -59,16 +59,22 @@ RUN git init -q \
     && git checkout -q --detach FETCH_HEAD \
     && test "$(git rev-parse HEAD)" = "$AIONCORE_COMMIT"
 
-COPY scripts/aioncore/patch-managed-skills.py /tmp/patch-managed-skills.py
+RUN install -d -m 0755 /opt/aionui-build
+COPY scripts/aioncore/patch-managed-skills.py /opt/aionui-build/patch-managed-skills.py
 
-RUN python3 -m py_compile /tmp/patch-managed-skills.py \
-    && python3 /tmp/patch-managed-skills.py /src/aioncore \
-    && cargo test --locked -p aionui-extension managed_skill_security_tests \
-    && cargo test --locked -p aionui-team managed_team_role_mode_tests \
-    && cargo test --locked -p aionui-db --test agent_skill_delivery_migration \
-    && cargo build --locked --release -p aionui-app \
-    && test -x /src/aioncore/target/release/aioncore \
-    && /src/aioncore/target/release/aioncore --version
+RUN --mount=type=tmpfs,target=/tmp \
+    set -eu; \
+    test -w /tmp; \
+    touch /tmp/.aionui-build-write-test; \
+    rm /tmp/.aionui-build-write-test; \
+    python3 -m py_compile /opt/aionui-build/patch-managed-skills.py; \
+    python3 /opt/aionui-build/patch-managed-skills.py /src/aioncore; \
+    cargo test --locked -p aionui-extension managed_skill_security_tests; \
+    cargo test --locked -p aionui-team managed_team_role_mode_tests; \
+    cargo test --locked -p aionui-db --test agent_skill_delivery_migration; \
+    cargo build --locked --release -p aionui-app; \
+    test -x /src/aioncore/target/release/aioncore; \
+    /src/aioncore/target/release/aioncore --version
 
 # ---- Builder ----------------------------------------------------------------
 # node:22-slim satisfies package.json "engines" (node >=22 <25) and matches the
