@@ -454,7 +454,7 @@ export async function provisionTeamRoleAssistant(
     .map((skill) => skill.name);
   const disabledBuiltinSkills = baseDetail.capabilities.default_disabled_builtin_skill_ids ?? [];
   const name = `${base.name} ${profile.label}`;
-  const description = `[Team Role Profile v2 / curated skills] ${profile.description}`;
+  const description = `[Team Role Profile v3 / pinned curated skills] ${profile.description}`;
   const defaults = cloneBaseDefaults(baseDetail, skillNames, profile.permissionMode);
 
   const existing = assistants.find((assistant) => assistant.id === roleAssistantId);
