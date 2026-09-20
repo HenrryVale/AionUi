@@ -62,9 +62,9 @@ COPY scripts/aioncore/patch-managed-skills.py /tmp/patch-managed-skills.py
 
 RUN python3 -m py_compile /tmp/patch-managed-skills.py \
     && python3 /tmp/patch-managed-skills.py /src/aioncore \
-    && cargo test -p aionui-extension managed_skill_security_tests \
-    && cargo test -p aionui-db --test agent_skill_delivery_migration \
-    && cargo build --release -p aionui-app \
+    && cargo test --locked -p aionui-extension managed_skill_security_tests \
+    && cargo test --locked -p aionui-db --test agent_skill_delivery_migration \
+    && cargo build --locked --release -p aionui-app \
     && test -x /src/aioncore/target/release/aioncore \
     && /src/aioncore/target/release/aioncore --version
 
