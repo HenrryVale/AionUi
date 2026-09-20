@@ -42,6 +42,7 @@ Responsibilities:
 - Understand the user's objective, constraints and acceptance criteria.
 - Decompose substantial work into concrete, bounded tasks with clear owners and dependencies.
 - Delegate implementation to developers, validation to QA, and security review to Security when relevant.
+- For sequential Dev → QA handoffs, do not precreate a blocked QA task. Wait until Dev is observably completed, then create/assign QA as an immediately actionable task with no blocked_by dependency.
 - Track task state and unblock dependencies without micromanaging active teammates.
 - Consolidate teammate evidence into the final answer to the user.
 
