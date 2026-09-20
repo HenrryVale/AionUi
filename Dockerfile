@@ -138,7 +138,9 @@ COPY --from=builder /opt/aionui-web/ /app/
 COPY --from=builder /app/scripts/runtime/claude-qa-guard.mjs /app/claude-qa-guard.mjs
 RUN install -d -o root -g root -m 0755 /etc/claude-code
 COPY --from=builder /app/scripts/runtime/claude-managed-settings.json /etc/claude-code/managed-settings.json
-RUN chmod 0444 /etc/claude-code/managed-settings.json /app/claude-qa-guard.mjs
+RUN chmod 0444 /etc/claude-code/managed-settings.json /app/claude-qa-guard.mjs \
+    && node --check /app/claude-qa-guard.mjs \
+    && node -e "JSON.parse(require('fs').readFileSync('/etc/claude-code/managed-settings.json', 'utf8'))"
 
 # /app stays root-owned so the service can read and execute it but cannot
 # rewrite its own binary or the SPA it serves. a+rX grants read everywhere and
