@@ -310,8 +310,16 @@ export async function provisionTeamRoleAssistant(
     deps.listAvailableSkills(),
   ]);
   const matchedSkills = resolveTeamRoleSkills(input.specialty, availableSkills);
-  const skillNames = matchedSkills.map((skill) => skill.name);
-  const customSkillNames = matchedSkills.filter((skill) => skill.is_custom).map((skill) => skill.name);
+  const skillNames = Array.from(
+    new Set([...(baseDetail.capabilities.default_skill_ids ?? []), ...matchedSkills.map((skill) => skill.name)])
+  );
+  const customSkillNames = Array.from(
+    new Set([
+      ...(baseDetail.capabilities.custom_skill_names ?? []),
+      ...matchedSkills.filter((skill) => skill.is_custom).map((skill) => skill.name),
+    ])
+  );
+  const disabledBuiltinSkills = baseDetail.capabilities.default_disabled_builtin_skill_ids ?? [];
   const name = `${base.name} ${profile.label}`;
   const description = `[Team Role Profile v1] ${profile.description}`;
   const defaults = cloneBaseDefaults(baseDetail, skillNames);
@@ -328,7 +336,7 @@ export async function provisionTeamRoleAssistant(
       agent_id: base.agent_id,
       enabled_skills: skillNames,
       custom_skill_names: customSkillNames,
-      disabled_builtin_skills: [],
+      disabled_builtin_skills: disabledBuiltinSkills,
       defaults,
     });
   } else {
@@ -340,7 +348,7 @@ export async function provisionTeamRoleAssistant(
       agent_id: base.agent_id,
       enabled_skills: skillNames,
       custom_skill_names: customSkillNames,
-      disabled_builtin_skills: [],
+      disabled_builtin_skills: disabledBuiltinSkills,
       defaults,
     });
   }
