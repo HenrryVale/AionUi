@@ -20,7 +20,7 @@ export const TEAM_MEMBER_SPECIALTIES: TeamMemberSpecialtyOption[] = [
   { value: 'general', label: 'General', suffix: '' },
   { value: 'pm', label: 'PM / Lead', suffix: 'PM' },
   { value: 'architect', label: 'Architect', suffix: 'Architect' },
-  { value: 'backend', label: 'Backend Developer', suffix: 'Backend' },
+  { value: 'backend', label: 'Backend Developer', suffix: 'Dev' },
   { value: 'frontend', label: 'Frontend Developer', suffix: 'Frontend' },
   { value: 'fullstack', label: 'Full Stack Developer', suffix: 'Full Stack' },
   { value: 'qa', label: 'QA / Testing', suffix: 'QA' },
