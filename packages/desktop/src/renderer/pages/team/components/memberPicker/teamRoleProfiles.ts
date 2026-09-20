@@ -2,6 +2,7 @@ import { ipcBridge } from '@/common';
 import type {
   Assistant,
   AssistantDefaultsRequest,
+  AssistantDetail,
   CreateAssistantRequest,
   UpdateAssistantRequest,
 } from '@/common/types/agent/assistantTypes';
@@ -241,9 +242,9 @@ export function resolveTeamRoleSkills(
     .map((entry) => entry.skill);
 }
 
-type TeamRoleProfileDeps = {
+export type TeamRoleProfileDeps = {
   listAssistants: () => Promise<Assistant[]>;
-  getAssistant: (id: string) => Promise<Awaited<ReturnType<typeof ipcBridge.assistants.get.invoke>>>;
+  getAssistant: (id: string) => Promise<AssistantDetail>;
   createAssistant: (request: CreateAssistantRequest) => Promise<Assistant>;
   updateAssistant: (request: UpdateAssistantRequest) => Promise<Assistant>;
   setAssistantState: (id: string, enabled: boolean) => Promise<unknown>;
@@ -262,10 +263,7 @@ const liveDeps: TeamRoleProfileDeps = {
     ipcBridge.fs.writeAssistantRule.invoke({ assistant_id: assistantId, locale: 'en-US', content }),
 };
 
-function cloneBaseDefaults(
-  detail: Awaited<ReturnType<typeof ipcBridge.assistants.get.invoke>>,
-  skillNames: string[]
-): AssistantDefaultsRequest {
+function cloneBaseDefaults(detail: AssistantDetail, skillNames: string[]): AssistantDefaultsRequest {
   return {
     model:
       detail.defaults.model.mode === 'fixed' && detail.defaults.model.value
