@@ -11,9 +11,12 @@ import type { TeamMemberSpecialty } from './teamMemberIdentity';
 
 export type ProvisionableTeamMemberSpecialty = Exclude<TeamMemberSpecialty, 'general'>;
 
+export type TeamRolePermissionMode = 'plan' | 'bypassPermissions';
+
 type TeamRoleProfile = {
   label: string;
   description: string;
+  permissionMode: TeamRolePermissionMode;
   rules: string;
   skillKeywords: string[];
 };
@@ -30,6 +33,7 @@ export const TEAM_ROLE_PROFILES: Record<ProvisionableTeamMemberSpecialty, TeamRo
   pm: {
     label: 'PM',
     description: 'Coordinates the team, decomposes goals, delegates work and consolidates results.',
+    permissionMode: 'bypassPermissions',
     skillKeywords: ['planning', 'project', 'requirements', 'product', 'task', 'coordination'],
     rules: `
 You are the Project Manager and Team Lead.
@@ -52,6 +56,7 @@ ${COMMON_TURN_END_RULES}
   architect: {
     label: 'Architect',
     description: 'Designs system boundaries, interfaces, data flows and technical trade-offs.',
+    permissionMode: 'plan',
     skillKeywords: ['architecture', 'system design', 'design', 'api', 'integration'],
     rules: `
 You are the Software Architect.
@@ -71,6 +76,7 @@ ${COMMON_TURN_END_RULES}
   backend: {
     label: 'Dev',
     description: 'Implements backend changes with minimal, testable and traceable code modifications.',
+    permissionMode: 'bypassPermissions',
     skillKeywords: ['backend', 'architecture', 'api', 'spring', 'java', 'testing', 'debug'],
     rules: `
 You are the Backend Developer.
@@ -91,6 +97,7 @@ ${COMMON_TURN_END_RULES}
   frontend: {
     label: 'Frontend',
     description: 'Implements frontend and UI changes while preserving existing interaction patterns.',
+    permissionMode: 'bypassPermissions',
     skillKeywords: ['frontend', 'react', 'ui', 'ux', 'accessibility', 'testing'],
     rules: `
 You are the Frontend Developer.
@@ -110,6 +117,7 @@ ${COMMON_TURN_END_RULES}
   fullstack: {
     label: 'Full Stack',
     description: 'Implements coordinated frontend and backend changes across a complete feature slice.',
+    permissionMode: 'bypassPermissions',
     skillKeywords: ['architecture', 'backend', 'frontend', 'api', 'testing', 'debug'],
     rules: `
 You are the Full Stack Developer.
@@ -128,19 +136,21 @@ ${COMMON_TURN_END_RULES}
   qa: {
     label: 'QA',
     description: 'Validates acceptance criteria, regressions and edge cases with reproducible evidence.',
+    permissionMode: 'plan',
     skillKeywords: ['testing', 'test', 'qa', 'quality', 'regression'],
     rules: `
 You are the QA Engineer.
 
 Responsibilities:
 - Translate acceptance criteria into explicit checks.
-- Inspect relevant tests and execute the strongest available validation.
+- Inspect relevant code, tests, acceptance criteria and the implementation evidence produced by Dev.
 - Look for regressions, boundary cases, race conditions and error paths.
-- Report PASS or FAIL with reproducible evidence, including commands and observed results.
+- Report PASS or FAIL with reproducible evidence.
+- When command execution is required, ask the leader to assign that execution to an implementation-capable teammate and validate the raw result.
 
 Boundaries:
-- Do NOT modify the implementation during a validation task.
-- If you find a defect, report it to the leader with evidence. Only modify code if the leader explicitly assigns a repair task.
+- Your runtime is intentionally non-executing: do NOT edit files or run implementation commands.
+- If you find a defect, report it to the leader with evidence. Repair belongs to Dev unless the team profile is explicitly changed.
 - Never convert a failed test into a pass by weakening the assertion unless that behavior change is explicitly required.
 ${COMMON_TURN_END_RULES}
 `.trim(),
@@ -148,6 +158,7 @@ ${COMMON_TURN_END_RULES}
   security: {
     label: 'Security',
     description: 'Reviews trust boundaries, permissions, secrets, inputs and dependency risks.',
+    permissionMode: 'plan',
     skillKeywords: ['security', 'secure', 'audit', 'threat', 'vulnerability', 'permission'],
     rules: `
 You are the Security Reviewer.
@@ -167,6 +178,7 @@ ${COMMON_TURN_END_RULES}
   devops: {
     label: 'DevOps',
     description: 'Owns build, deployment, runtime configuration and operational reliability changes.',
+    permissionMode: 'bypassPermissions',
     skillKeywords: ['devops', 'docker', 'deploy', 'deployment', 'ci', 'cd', 'infrastructure', 'operations'],
     rules: `
 You are the DevOps Engineer.
@@ -186,6 +198,7 @@ ${COMMON_TURN_END_RULES}
   reviewer: {
     label: 'Reviewer',
     description: 'Reviews code changes for correctness, maintainability and regression risk.',
+    permissionMode: 'plan',
     skillKeywords: ['review', 'code review', 'testing', 'quality', 'architecture'],
     rules: `
 You are the Code Reviewer.
@@ -263,16 +276,17 @@ const liveDeps: TeamRoleProfileDeps = {
     ipcBridge.fs.writeAssistantRule.invoke({ assistant_id: assistantId, locale: 'en-US', content }),
 };
 
-function cloneBaseDefaults(detail: AssistantDetail, skillNames: string[]): AssistantDefaultsRequest {
+function cloneBaseDefaults(
+  detail: AssistantDetail,
+  skillNames: string[],
+  permissionMode: TeamRolePermissionMode
+): AssistantDefaultsRequest {
   return {
     model:
       detail.defaults.model.mode === 'fixed' && detail.defaults.model.value
         ? { mode: 'fixed', value: detail.defaults.model.value }
         : { mode: 'auto' },
-    permission:
-      detail.defaults.permission.mode === 'fixed' && detail.defaults.permission.value
-        ? { mode: 'fixed', value: detail.defaults.permission.value }
-        : { mode: 'auto' },
+    permission: { mode: 'fixed', value: permissionMode },
     thought_level:
       detail.defaults.thought_level.mode === 'fixed' && detail.defaults.thought_level.value
         ? { mode: 'fixed', value: detail.defaults.thought_level.value }
@@ -322,7 +336,7 @@ export async function provisionTeamRoleAssistant(
   const disabledBuiltinSkills = baseDetail.capabilities.default_disabled_builtin_skill_ids ?? [];
   const name = `${base.name} ${profile.label}`;
   const description = `[Team Role Profile v1] ${profile.description}`;
-  const defaults = cloneBaseDefaults(baseDetail, skillNames);
+  const defaults = cloneBaseDefaults(baseDetail, skillNames, profile.permissionMode);
 
   const existing = assistants.find((assistant) => assistant.id === roleAssistantId);
   let roleAssistant: Assistant;
