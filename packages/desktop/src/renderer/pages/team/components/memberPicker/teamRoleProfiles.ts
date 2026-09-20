@@ -11,7 +11,6 @@ import {
   TEAM_ROLE_AUTO_BLOCKED_SKILLS,
   TEAM_ROLE_SKILL_BUNDLE_ROOT,
   teamRoleAllowedSkillNames,
-  teamRoleSkillBundlePath,
 } from './teamRoleSkillPolicy';
 import type { ProvisionableTeamMemberSpecialty } from './teamRoleSkillPolicy';
 
@@ -250,69 +249,9 @@ export function resolveTeamRoleSkills(
     .slice(0, limit);
 }
 
-export type TeamRoleSkillImportRecord = {
-  skill_name?: string | null;
-  source_path?: string | null;
-  status: string;
-  created_at: number;
-};
-
-export type TeamRoleSkillImportResult = {
-  skill_name: string;
-  skill_names?: string[];
-  failed?: Array<{
-    source_name: string;
-    code: string;
-    error_path?: string;
-  }>;
-};
-
-const SUCCESSFUL_SKILL_IMPORT_STATUSES = new Set(['imported', 'overwritten']);
-const MANAGED_TEAM_SKILL_BUNDLE_PREFIX = '/app/team-skills/';
-const managedTeamSkillImportFlights = new Map<string, Promise<TeamRoleSkillImportResult>>();
-
-async function importManagedTeamSkillOnce(
-  deps: Pick<TeamRoleProfileDeps, 'importSkill'>,
-  sourcePath: string
-): Promise<TeamRoleSkillImportResult> {
-  const existing = managedTeamSkillImportFlights.get(sourcePath);
-  if (existing) return existing;
-
-  const flight = deps.importSkill(sourcePath);
-  managedTeamSkillImportFlights.set(sourcePath, flight);
-
-  try {
-    return await flight;
-  } finally {
-    if (managedTeamSkillImportFlights.get(sourcePath) === flight) {
-      managedTeamSkillImportFlights.delete(sourcePath);
-    }
-  }
-}
-
-function latestSuccessfulSkillImport(
-  records: TeamRoleSkillImportRecord[],
-  skillName: string
-): TeamRoleSkillImportRecord | undefined {
-  return records
-    .filter(
-      (record) =>
-        record.skill_name === skillName &&
-        SUCCESSFUL_SKILL_IMPORT_STATUSES.has(record.status)
-    )
-    .sort((a, b) => b.created_at - a.created_at)[0];
-}
-
-function isManagedTeamSkillSource(sourcePath: string | null | undefined): boolean {
-  return typeof sourcePath === 'string' && sourcePath.startsWith(MANAGED_TEAM_SKILL_BUNDLE_PREFIX);
-}
-
 export async function ensureTeamRoleSkills(
   specialty: ProvisionableTeamMemberSpecialty,
-  deps: Pick<
-    TeamRoleProfileDeps,
-    'listAvailableSkills' | 'listSkillImportHistory' | 'importSkill'
-  >
+  deps: Pick<TeamRoleProfileDeps, 'listAvailableSkills'>
 ): Promise<SkillInfo[]> {
   const expectedNames = [...teamRoleAllowedSkillNames(specialty)];
 
@@ -322,56 +261,32 @@ export async function ensureTeamRoleSkills(
     }
   }
 
-  let availableSkills = await deps.listAvailableSkills();
-  const importHistory = await deps.listSkillImportHistory();
+  const availableSkills = await deps.listAvailableSkills();
   const availableByName = new Map(availableSkills.map((skill) => [skill.name, skill]));
+  const missing: string[] = [];
 
   for (const skillName of expectedNames) {
-    const existing = availableByName.get(skillName);
-    const expectedSourcePath = teamRoleSkillBundlePath(skillName);
-    const latestImport = latestSuccessfulSkillImport(importHistory, skillName);
-    const latestSourcePath = latestImport?.source_path;
-
-    if (existing && latestSourcePath === expectedSourcePath) {
+    const skill = availableByName.get(skillName);
+    if (!skill) {
+      missing.push(skillName);
       continue;
     }
 
-    if (existing && !isManagedTeamSkillSource(latestSourcePath)) {
+    const expectedLocation = `${TEAM_ROLE_SKILL_BUNDLE_ROOT}/${skillName}/SKILL.md`;
+    if (skill.source !== 'extension' || skill.location !== expectedLocation) {
       throw new Error(
-        `Team role skill provenance conflict for ${skillName}: an available skill with this name was not imported from the managed bundle ${TEAM_ROLE_SKILL_BUNDLE_ROOT}`
-      );
-    }
-
-    const imported = await importManagedTeamSkillOnce(deps, expectedSourcePath);
-    if (imported.failed?.length) {
-      const detail = imported.failed.map((failure) => `${failure.source_name}:${failure.code}`).join(', ');
-      throw new Error(`Managed Team skill import failed for ${skillName}: ${detail}`);
-    }
-
-    const importedNames = new Set([
-      imported.skill_name,
-      ...(imported.skill_names ?? []),
-    ].filter(Boolean));
-
-    if (!importedNames.has(skillName)) {
-      throw new Error(
-        `Managed Team skill import did not report expected skill ${skillName} from ${expectedSourcePath}`
+        `Team role skill provenance conflict for ${skillName}: expected managed source ${expectedLocation}, got ${skill.source}:${skill.location}`
       );
     }
   }
-
-  availableSkills = await deps.listAvailableSkills();
-  const resolved = resolveTeamRoleSkills(specialty, availableSkills);
-  const resolvedNames = resolved.map((skill) => skill.name);
-  const missing = expectedNames.filter((name) => !resolvedNames.includes(name));
 
   if (missing.length) {
     throw new Error(
-      `Managed Team role skills are unavailable after import for ${specialty}: ${missing.join(', ')}`
+      `Managed Team role skills are unavailable for ${specialty}: ${missing.join(', ')}`
     );
   }
 
-  return resolved;
+  return resolveTeamRoleSkills(specialty, availableSkills);
 }
 
 export type TeamRoleProfileDeps = {
@@ -381,8 +296,6 @@ export type TeamRoleProfileDeps = {
   updateAssistant: (request: UpdateAssistantRequest) => Promise<Assistant>;
   setAssistantState: (id: string, enabled: boolean) => Promise<unknown>;
   listAvailableSkills: () => Promise<SkillInfo[]>;
-  listSkillImportHistory: () => Promise<TeamRoleSkillImportRecord[]>;
-  importSkill: (skillPath: string) => Promise<TeamRoleSkillImportResult>;
   writeAssistantRule: (assistantId: string, content: string) => Promise<unknown>;
 };
 
@@ -393,8 +306,6 @@ const liveDeps: TeamRoleProfileDeps = {
   updateAssistant: (request) => ipcBridge.assistants.update.invoke(request),
   setAssistantState: (id, enabled) => ipcBridge.assistants.setState.invoke({ id, enabled }),
   listAvailableSkills: () => ipcBridge.fs.listAvailableSkills.invoke(),
-  listSkillImportHistory: () => ipcBridge.fs.listSkillImportHistory.invoke(),
-  importSkill: (skillPath) => ipcBridge.fs.importSkill.invoke({ skill_path: skillPath }),
   writeAssistantRule: (assistantId, content) =>
     ipcBridge.fs.writeAssistantRule.invoke({ assistant_id: assistantId, locale: 'en-US', content }),
 };
