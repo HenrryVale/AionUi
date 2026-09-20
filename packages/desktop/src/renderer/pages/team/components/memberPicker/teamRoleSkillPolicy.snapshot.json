@@ -4,7 +4,7 @@
   "selection": {
     "mode": "exact-name-only",
     "inheritBaseAssistantSkills": false,
-    "missingSkillBehavior": "omit-without-fuzzy-fallback",
+    "missingSkillBehavior": "managed-import-then-fail-closed",
     "taskRouting": "skill-design-primary-plus-supports-and-gates"
   },
   "automaticRiskPolicy": {
