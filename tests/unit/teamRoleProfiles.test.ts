@@ -319,7 +319,7 @@ describe('team role profiles', () => {
 
   it('pins the curated skill policy to the audited skill-design snapshot', () => {
     expect(TEAM_ROLE_SKILL_POLICY_SOURCE.repository).toBe('HenrryVale/skill-design');
-    expect(TEAM_ROLE_SKILL_POLICY_SOURCE.commit).toBe('8fea33732ab971bcc5488694de0f2cd99673244e');
+    expect(TEAM_ROLE_SKILL_POLICY_SOURCE.commit).toBe('4ef1e1fc5222e596205ef383a128c181651350c5');
     expect(TEAM_ROLE_SKILL_POLICY_SOURCE.rolePolicy).toBe('pack/aionui-team-roles.json');
   });
 
