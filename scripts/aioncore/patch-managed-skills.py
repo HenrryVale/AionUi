@@ -359,6 +359,120 @@ mod managed_skill_security_tests {
     text += test_module
     skill_file.write_text(text, encoding="utf-8")
 
+    provisioning_file = root / "crates/aionui-team/src/provisioning.rs"
+    ptext = provisioning_file.read_text(encoding="utf-8")
+
+    role_mode_helper = r'''
+fn managed_team_role_session_mode(
+    assistant_id: Option<&str>,
+) -> Result<Option<&'static str>, TeamError> {
+    let Some(assistant_id) = assistant_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+
+    if !assistant_id.starts_with("team-role:") {
+        return Ok(None);
+    }
+
+    let specialty = assistant_id.rsplit(':').next().unwrap_or_default();
+    match specialty {
+        "architect" | "qa" | "security" | "reviewer" => Ok(Some("plan")),
+        "pm" | "backend" | "frontend" | "fullstack" | "devops" => {
+            Ok(Some("bypassPermissions"))
+        }
+        _ => Err(TeamError::InvalidRequest(format!(
+            "unknown managed Team role assistant specialty: {assistant_id}"
+        ))),
+    }
+}
+
+'''
+    ptext = replace_once(
+        ptext,
+        "use crate::types::{Team, TeamAgent, TeammateRole};\nuse crate::workspace::TeamWorkspaceResolver;\n\n",
+        "use crate::types::{Team, TeamAgent, TeammateRole};\nuse crate::workspace::TeamWorkspaceResolver;\n\n"
+        + role_mode_helper,
+        "managed Team role mode helper",
+    )
+
+    ptext = replace_once(
+        ptext,
+        "                    session_mode: row.session_mode.clone(),\n",
+        "                    session_mode: managed_team_role_session_mode(req.assistant_id.as_deref())?\n"
+        "                        .map(str::to_owned)\n"
+        "                        .or(row.session_mode.clone()),\n",
+        "spawned role session seed",
+    )
+
+    old_runtime_mode = (
+        "        let session_mode = session_mode_for_backend(&agent.backend, agent_type, cli_metadata.as_ref());\n"
+    )
+    if ptext.count(old_runtime_mode) != 2:
+        fail(
+            "managed Team role attach mode: expected exactly two runtime mode anchors, "
+            f"found {ptext.count(old_runtime_mode)}"
+        )
+    new_runtime_mode = (
+        "        let session_mode = managed_team_role_session_mode(agent.assistant_id.as_deref())?\n"
+        "            .map(str::to_owned)\n"
+        "            .unwrap_or_else(|| session_mode_for_backend(&agent.backend, agent_type, cli_metadata.as_ref()));\n"
+    )
+    ptext = ptext.replace(old_runtime_mode, new_runtime_mode)
+
+    role_mode_tests = r'''
+
+#[cfg(test)]
+mod managed_team_role_mode_tests {
+    use super::*;
+
+    #[test]
+    fn restrictive_managed_roles_use_plan_mode() {
+        for specialty in ["architect", "qa", "security", "reviewer"] {
+            let id = format!("team-role:bare:claude:{specialty}");
+            assert_eq!(
+                managed_team_role_session_mode(Some(&id)).unwrap(),
+                Some("plan")
+            );
+        }
+    }
+
+    #[test]
+    fn execution_managed_roles_use_bypass_permissions() {
+        for specialty in ["pm", "backend", "frontend", "fullstack", "devops"] {
+            let id = format!("team-role:bare:claude:{specialty}");
+            assert_eq!(
+                managed_team_role_session_mode(Some(&id)).unwrap(),
+                Some("bypassPermissions")
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_assistants_are_not_reclassified() {
+        assert_eq!(
+            managed_team_role_session_mode(Some("bare:2d23ff1c")).unwrap(),
+            None
+        );
+        assert_eq!(managed_team_role_session_mode(None).unwrap(), None);
+    }
+
+    #[test]
+    fn unknown_managed_role_fails_closed() {
+        let err =
+            managed_team_role_session_mode(Some("team-role:bare:claude:unknown"))
+                .unwrap_err();
+        assert!(matches!(err, TeamError::InvalidRequest(_)));
+    }
+}
+'''
+    if "mod managed_team_role_mode_tests" in ptext:
+        fail("managed Team role mode test module already present")
+    ptext += role_mode_tests
+    provisioning_file.write_text(ptext, encoding="utf-8")
+
     migration = root / "crates/aionui-db/migrations/044_managed_skill_hardening.sql"
     if migration.exists():
         fail("migration 044 already exists")
@@ -398,7 +512,7 @@ async fn claude_uses_injected_delivery_after_managed_skill_hardening() {
     mtext = mtext[:attr_start] + new_test + mtext[next_doc:]
     migration_test.write_text(mtext, encoding="utf-8")
 
-    print("Patched AionCore managed-skill resolver and Claude delivery hardening.")
+    print("Patched AionCore managed skills, Claude delivery, and dynamic Team role modes.")
     return 0
 
 
