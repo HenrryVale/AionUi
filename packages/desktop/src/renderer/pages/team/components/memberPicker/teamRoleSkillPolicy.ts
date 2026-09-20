@@ -18,7 +18,7 @@ export type TeamRoleSkillPolicy = {
  */
 export const TEAM_ROLE_SKILL_POLICY_SOURCE = {
   repository: 'HenrryVale/skill-design',
-  commit: '2fc19a167312c62022fe813490e52852c4afc0ff',
+  commit: '75e78abdf42deee73cbe51199806afdb8eebf539',
   rolePolicy: 'pack/aionui-team-roles.json',
   catalog: 'pack/skills.json',
   router: 'agent/router.yaml',
