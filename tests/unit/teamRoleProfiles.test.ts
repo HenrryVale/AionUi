@@ -534,6 +534,7 @@ describe('team role profiles', () => {
         updateAssistant: vi.fn(),
         setAssistantState: vi.fn(async () => undefined),
         listAvailableSkills: vi.fn(async () => skills),
+        ...managedQaSkillDeps(),
         writeAssistantRule,
       }
     );
