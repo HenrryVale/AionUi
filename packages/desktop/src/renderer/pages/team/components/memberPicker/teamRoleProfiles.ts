@@ -236,7 +236,7 @@ export function resolveTeamRoleSkills(
   const keywords = TEAM_ROLE_PROFILES[specialty].skillKeywords;
   return availableSkills
     .map((skill) => ({ skill, score: skillScore(skill, keywords) }))
-    .filter((entry) => entry.score > 0)
+    .filter((entry) => entry.score > 0 && !entry.skill.is_auto_inject)
     .sort((a, b) => b.score - a.score || a.skill.name.localeCompare(b.skill.name))
     .slice(0, maxSkills)
     .map((entry) => entry.skill);
