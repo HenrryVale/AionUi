@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  evaluatePmDependencyHandoff,
   evaluateQaTool,
   pathIsInsideWorkspace,
 } from '../../scripts/runtime/claude-qa-guard.mjs';
@@ -30,6 +31,59 @@ function evaluate(toolName, toolInput = {}, overrides = {}) {
     ...overrides,
   });
 }
+
+describe('PM to QA dependency handoff guard', () => {
+  const pmIdentity = {
+    isPm: true,
+    qaSlotIds: ['slot-qa'],
+  };
+
+  it('denies precreating a QA task with blocked_by dependencies', () => {
+    expect(
+      evaluatePmDependencyHandoff({
+        toolName: 'mcp__aionui-team__team_task_create',
+        toolInput: {
+          subject: 'QA after Dev',
+          owner: 'slot-qa',
+          blocked_by: ['task-dev'],
+        },
+        identity: pmIdentity,
+      })
+    ).toEqual({
+      decision: 'deny',
+      reason:
+        'PM handoff guard: do not precreate a QA task with blocked_by. Wait until upstream work is completed, then create the QA task as immediately actionable with no blocked_by dependency.',
+    });
+  });
+
+  it('allows an immediately actionable QA task after upstream completion', () => {
+    expect(
+      evaluatePmDependencyHandoff({
+        toolName: 'mcp__aionui-team__team_task_create',
+        toolInput: {
+          subject: 'QA now',
+          owner: 'slot-qa',
+          blocked_by: [],
+        },
+        identity: pmIdentity,
+      }).decision
+    ).toBe('pass');
+  });
+
+  it('does not restrict non-QA task dependencies', () => {
+    expect(
+      evaluatePmDependencyHandoff({
+        toolName: 'mcp__aionui-team__team_task_create',
+        toolInput: {
+          subject: 'Dev follow-up',
+          owner: 'slot-dev',
+          blocked_by: ['task-a'],
+        },
+        identity: pmIdentity,
+      }).decision
+    ).toBe('pass');
+  });
+});
 
 describe('Claude QA capability guard', () => {
   it('is wired through immutable managed Claude settings', () => {
