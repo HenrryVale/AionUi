@@ -240,12 +240,10 @@ export function resolveTeamRoleSkills(
 
   return allowedNames
     .map((name) => availableByName.get(name))
-    .filter(
-      (skill): skill is SkillInfo =>
-        Boolean(skill) &&
-        !skill!.is_auto_inject &&
-        !TEAM_ROLE_AUTO_BLOCKED_SKILLS.has(skill!.name)
-    )
+    .filter((skill): skill is SkillInfo => {
+      if (!skill) return false;
+      return !skill.is_auto_inject && !TEAM_ROLE_AUTO_BLOCKED_SKILLS.has(skill.name);
+    })
     .slice(0, limit);
 }
 
