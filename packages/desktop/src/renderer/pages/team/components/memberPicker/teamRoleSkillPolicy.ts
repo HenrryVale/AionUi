@@ -5,7 +5,8 @@ export type ProvisionableTeamMemberSpecialty = Exclude<TeamMemberSpecialty, 'gen
 export type TeamRoleSkillPolicy = {
   /**
    * Exact skill names, ordered by preference. A role never falls back to
-   * fuzzy name/description matches: if a skill is unavailable, it is skipped.
+   * fuzzy name/description matches. Missing managed skills are imported from
+   * the pinned immutable bundle and provisioning fails closed if they remain unavailable.
    */
   skills: readonly string[];
 };
