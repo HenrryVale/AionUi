@@ -111,6 +111,22 @@ describe('Claude QA capability guard', () => {
         message: 'broadcast',
       }).decision
     ).toBe('deny');
+
+    expect(
+      evaluate('mcp__aionui-team__team_send_message', {
+        to: 'slot-pm',
+        message: 'workspace evidence',
+        files: ['/workspace/AionUi/report.txt'],
+      }).decision
+    ).toBe('pass');
+
+    expect(
+      evaluate('mcp__aionui-team__team_send_message', {
+        to: 'slot-pm',
+        message: 'attempted secret attachment',
+        files: ['/data/aionui-backend.db'],
+      }).decision
+    ).toBe('deny');
   });
 
   it('allows only lifecycle status updates on the QA-owned task', () => {
