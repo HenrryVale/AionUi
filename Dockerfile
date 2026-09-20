@@ -130,6 +130,16 @@ WORKDIR /app
 # as siblings of the executable via process.execPath.
 COPY --from=builder /opt/aionui-web/ /app/
 
+# Claude QA capability wall. The hook and managed policy are baked outside HOME,
+# root-owned, and become immutable at runtime because production runs with a
+# read-only root filesystem. This is intentionally independent from Claude's
+# permission mode: QA remains plan-mode as defence in depth, while PreToolUse
+# enforces the closed capability surface before any tool execution.
+COPY --from=builder /app/scripts/runtime/claude-qa-guard.mjs /app/claude-qa-guard.mjs
+RUN install -d -o root -g root -m 0755 /etc/claude-code
+COPY --from=builder /app/scripts/runtime/claude-managed-settings.json /etc/claude-code/managed-settings.json
+RUN chmod 0444 /etc/claude-code/managed-settings.json /app/claude-qa-guard.mjs
+
 # /app stays root-owned so the service can read and execute it but cannot
 # rewrite its own binary or the SPA it serves. a+rX grants read everywhere and
 # execute only where it already applies (binaries and directories, never plain
