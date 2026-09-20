@@ -336,6 +336,28 @@ describe('team role profiles', () => {
     );
   });
 
+  it('pins and builds the patched AionCore managed-skill resolver', () => {
+    const dockerfile = fs.readFileSync('Dockerfile', 'utf8');
+    expect(dockerfile).toContain(
+      'ARG AIONCORE_COMMIT=47e66d0d151123e973b3fd1e77afcb5671b3f8c5'
+    );
+    expect(dockerfile).toContain(
+      'COPY scripts/aioncore/patch-managed-skills.py /tmp/patch-managed-skills.py'
+    );
+    expect(dockerfile).toContain(
+      'cargo test -p aionui-extension managed_skill_security_tests'
+    );
+    expect(dockerfile).toContain(
+      'cargo test -p aionui-db --test agent_skill_delivery_migration'
+    );
+    expect(dockerfile).toContain(
+      'COPY --from=aioncore-builder /src/aioncore/target/release/aioncore /tmp/aioncore-managed-skills'
+    );
+    expect(dockerfile).toContain(
+      'AIONUI_MANAGED_SKILLS_DIR=/app/team-skills/${SKILL_DESIGN_COMMIT}'
+    );
+  });
+
   it('matches the vendored skill-design role manifest exactly', () => {
     const snapshot = JSON.parse(
       fs.readFileSync(
