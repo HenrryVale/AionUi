@@ -70,7 +70,7 @@ const TeamMemberDraftList: React.FC<Props> = ({
       <p className='m-0 mb-12px text-12px leading-18px text-t-tertiary'>
         {t('team.create.membersHelper', {
           defaultValue:
-            'Choose team members and assign one Leader. The same assistant can be selected multiple times with a different name or specialty.',
+            'Choose team members and assign one Leader. Specialties create or reuse role profiles with persistent responsibilities and matching available skills.',
         })}
       </p>
       <div
