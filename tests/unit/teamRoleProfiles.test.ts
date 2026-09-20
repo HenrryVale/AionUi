@@ -4,6 +4,7 @@ import type { Assistant } from '@/common/types/agent/assistantTypes';
 import type { SkillInfo } from '@/renderer/pages/settings/AssistantSettings/types';
 import {
   ensureTeamRoleSkills,
+  provisionTeamDynamicRoleAssistants,
   provisionTeamRoleAssistant,
   resolveTeamRoleSkills,
   teamRoleAssistantId,
@@ -600,6 +601,40 @@ describe('team role profiles', () => {
     expect(writeAssistantRule).toHaveBeenCalledWith(
       'team-role:bare:claude:qa',
       TEAM_ROLE_PROFILES.qa.rules
+    );
+  });
+
+  it('pre-provisions all dynamic role assistants for PM delegation', async () => {
+    const createAssistant = vi.fn(async (request) => ({
+      ...baseAssistant,
+      id: request.id!,
+      name: request.name,
+      source: 'user' as const,
+      enabled_skills: request.enabled_skills ?? [],
+    }));
+
+    const created = await provisionTeamDynamicRoleAssistants(baseAssistant.id, {
+      listAssistants: vi.fn(async () => [baseAssistant]),
+      getAssistant: vi.fn(async () => baseDetail),
+      createAssistant,
+      updateAssistant: vi.fn(),
+      setAssistantState: vi.fn(async () => undefined),
+      listAvailableSkills: vi.fn(async () => managedSkills),
+      writeAssistantRule: vi.fn(async () => undefined),
+    });
+
+    expect(created.map((assistant) => assistant.id)).toEqual([
+      'team-role:bare:claude:architect',
+      'team-role:bare:claude:backend',
+      'team-role:bare:claude:frontend',
+      'team-role:bare:claude:fullstack',
+      'team-role:bare:claude:qa',
+      'team-role:bare:claude:security',
+      'team-role:bare:claude:devops',
+      'team-role:bare:claude:reviewer',
+    ]);
+    expect(TEAM_ROLE_PROFILES.pm.rules).toContain(
+      'Never simulate a specialty by spawning a bare assistant'
     );
   });
 
