@@ -268,6 +268,26 @@ export type TeamRoleSkillImportResult = {
 
 const SUCCESSFUL_SKILL_IMPORT_STATUSES = new Set(['imported', 'overwritten']);
 const MANAGED_TEAM_SKILL_BUNDLE_PREFIX = '/app/team-skills/';
+const managedTeamSkillImportFlights = new Map<string, Promise<TeamRoleSkillImportResult>>();
+
+async function importManagedTeamSkillOnce(
+  deps: Pick<TeamRoleProfileDeps, 'importSkill'>,
+  sourcePath: string
+): Promise<TeamRoleSkillImportResult> {
+  const existing = managedTeamSkillImportFlights.get(sourcePath);
+  if (existing) return existing;
+
+  const flight = deps.importSkill(sourcePath);
+  managedTeamSkillImportFlights.set(sourcePath, flight);
+
+  try {
+    return await flight;
+  } finally {
+    if (managedTeamSkillImportFlights.get(sourcePath) === flight) {
+      managedTeamSkillImportFlights.delete(sourcePath);
+    }
+  }
+}
 
 function latestSuccessfulSkillImport(
   records: TeamRoleSkillImportRecord[],
@@ -321,7 +341,7 @@ export async function ensureTeamRoleSkills(
       );
     }
 
-    const imported = await deps.importSkill(expectedSourcePath);
+    const imported = await importManagedTeamSkillOnce(deps, expectedSourcePath);
     if (imported.failed?.length) {
       const detail = imported.failed.map((failure) => `${failure.source_name}:${failure.code}`).join(', ');
       throw new Error(`Managed Team skill import failed for ${skillName}: ${detail}`);
