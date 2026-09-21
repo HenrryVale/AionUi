@@ -353,10 +353,19 @@ describe('team role profiles', () => {
       'ARG AIONCORE_COMMIT=47e66d0d151123e973b3fd1e77afcb5671b3f8c5'
     );
     expect(dockerfile).toContain(
-      'COPY scripts/aioncore/patch-managed-skills.py /tmp/patch-managed-skills.py'
+      'COPY scripts/aioncore/patch-managed-skills.py /opt/aionui-build/patch-managed-skills.py'
+    );
+    expect(dockerfile).toContain(
+      'RUN --mount=type=tmpfs,target=/tmp'
+    );
+    expect(dockerfile).toContain(
+      'ENV CARGO_BUILD_JOBS=1'
     );
     expect(dockerfile).toContain(
       'cargo test --locked -p aionui-extension managed_skill_security_tests'
+    );
+    expect(dockerfile).toContain(
+      'cargo test --locked -p aionui-team managed_team_role_mode_tests'
     );
     expect(dockerfile).toContain(
       'cargo test --locked -p aionui-db --test agent_skill_delivery_migration'
