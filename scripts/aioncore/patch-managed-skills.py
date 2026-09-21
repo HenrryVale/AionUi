@@ -544,7 +544,156 @@ async fn claude_uses_injected_delivery_after_managed_skill_hardening() {
     mtext = mtext[:attr_start] + new_test + mtext[next_doc:]
     migration_test.write_text(mtext, encoding="utf-8")
 
-    print("Patched AionCore managed skills, Claude delivery, and dynamic Team role modes.")
+    # Direct-CLI Claude/Codex bypass AcpAgentManager and therefore never run
+    # SessionNewPreludeHook. For injected delivery, compose the same managed
+    # [Assistant Rules] + skills index at the factory boundary and carry it
+    # through SessionInit.preset_context, which Claude maps to
+    # --append-system-prompt.
+    acp_factory_file = root / "crates/aionui-ai-agent/src/factory/acp.rs"
+    atext = acp_factory_file.read_text(encoding="utf-8")
+
+    old_direct_cli_delivery = """        let delivery = crate::factory::resolve_skill_delivery(
+            deps.as_ref(),
+            &ctx.user_id,
+            &ctx.conversation_id,
+            &config.skills,
+            &meta,
+        )
+        .await;
+        let instance = crate::session_agent::build_session_instance(
+"""
+    new_direct_cli_delivery = """        let mut delivery = crate::factory::resolve_skill_delivery(
+            deps.as_ref(),
+            &ctx.user_id,
+            &ctx.conversation_id,
+            &config.skills,
+            &meta,
+        )
+        .await;
+
+        // claude/codex on this route use SessionAgentTask, not AcpAgentManager,
+        // so SessionNewPreludeHook never runs. Injected-mode vendors must get
+        // the exact same composed rules + skill index through SessionInit.
+        if matches!(
+            &delivery.plan.mode,
+            aionui_api_types::SkillDeliveryMode::Injected
+        ) {
+            delivery.injected_prefix = crate::factory::compose_injected_prefix_for(
+                deps.as_ref(),
+                &ctx.user_id,
+                config.preset_context.as_deref(),
+                &config.skills,
+                &delivery.plan.mode,
+            )
+            .await;
+        }
+
+        let instance = crate::session_agent::build_session_instance(
+"""
+    atext = replace_once(
+        atext,
+        old_direct_cli_delivery,
+        new_direct_cli_delivery,
+        "direct CLI managed injected prefix composition",
+    )
+    acp_factory_file.write_text(atext, encoding="utf-8")
+
+    session_agent_file = root / "crates/aionui-ai-agent/src/session_agent.rs"
+    stext = session_agent_file.read_text(encoding="utf-8")
+
+    helper_anchor = """/// Open a claude/codex `SessionBackend` via the clean-slate connection and wrap it
+"""
+    helper = """fn direct_cli_preset_context(
+    config: &AcpBuildExtra,
+    skill_delivery: &crate::factory::ResolvedSkillDelivery,
+) -> Option<String> {
+    skill_delivery
+        .injected_prefix
+        .clone()
+        .or_else(|| config.preset_context.clone())
+}
+
+"""
+    stext = replace_once(
+        stext,
+        helper_anchor,
+        helper + helper_anchor,
+        "direct CLI preset context helper",
+    )
+
+    old_session_init = """    // GAP #4 — preset_context + skills carried into the init surface.
+    let init = SessionInit {
+        mcp_servers,
+        skills: config.skills.clone(),
+        preset_context: config.preset_context.clone(),
+"""
+    new_session_init = """    // GAP #4 — preset_context + skills carried into the init surface.
+    // Injected-mode direct-CLI vendors do not run the ACP prompt pipeline, so
+    // prefer the factory-composed managed rules/skill index. Non-injected
+    // delivery preserves the original raw preset context.
+    let init = SessionInit {
+        mcp_servers,
+        skills: config.skills.clone(),
+        preset_context: direct_cli_preset_context(config, &skill_delivery),
+"""
+    stext = replace_once(
+        stext,
+        old_session_init,
+        new_session_init,
+        "direct CLI SessionInit managed preset",
+    )
+
+    direct_cli_tests = r"""
+
+#[cfg(test)]
+mod managed_direct_cli_skill_delivery_tests {
+    use super::*;
+    use crate::factory::ResolvedSkillDelivery;
+
+    #[test]
+    fn injected_managed_prefix_wins_over_raw_preset_for_direct_cli() {
+        let config = AcpBuildExtra {
+            preset_context: Some("RAW_ROLE_PROMPT".into()),
+            ..Default::default()
+        };
+        let delivery = ResolvedSkillDelivery {
+            injected_prefix: Some(
+                "[Assistant Rules]\nROLE\n## Available Skills\n- **skill-design**: router\n[/Assistant Rules]"
+                    .into(),
+            ),
+            ..Default::default()
+        };
+
+        let resolved = direct_cli_preset_context(&config, &delivery)
+            .expect("injected managed prefix must be carried into SessionInit");
+
+        assert!(resolved.contains("[Assistant Rules]"));
+        assert!(resolved.contains("## Available Skills"));
+        assert!(resolved.contains("skill-design"));
+        assert_ne!(resolved, "RAW_ROLE_PROMPT");
+    }
+
+    #[test]
+    fn direct_cli_without_injected_prefix_preserves_raw_preset() {
+        let config = AcpBuildExtra {
+            preset_context: Some("RAW_ROLE_PROMPT".into()),
+            ..Default::default()
+        };
+        let delivery = ResolvedSkillDelivery::default();
+
+        assert_eq!(
+            direct_cli_preset_context(&config, &delivery).as_deref(),
+            Some("RAW_ROLE_PROMPT")
+        );
+    }
+}
+"""
+    if "mod managed_direct_cli_skill_delivery_tests" in stext:
+        fail("managed direct CLI skill delivery tests already present")
+    stext += direct_cli_tests
+    session_agent_file.write_text(stext, encoding="utf-8")
+
+    print("Patched AionCore managed skills, direct-CLI injected delivery, and dynamic Team role modes.")
     return 0
 
 
