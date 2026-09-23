@@ -6,6 +6,7 @@ import {
   ensureTeamRoleSkills,
   provisionTeamDynamicRoleAssistants,
   provisionTeamRoleAssistant,
+  resolveTeamRoleDisabledAutoInjectSkills,
   resolveTeamRoleSkills,
   teamRoleAssistantId,
   TEAM_ROLE_PROFILES,
@@ -461,6 +462,46 @@ describe('team role profiles', () => {
     expect(resolveTeamRoleSkills('qa', [autoShipGate]).map((skill) => skill.name)).toEqual([]);
   });
 
+  it('disables auto-injected skills outside the managed role allowlist', () => {
+    const autoAionuiConfig: SkillInfo = {
+      name: 'aionui-config',
+      description: 'AionUi configuration helper',
+      location: '/builtin/aionui-config',
+      is_auto_inject: true,
+      is_custom: false,
+      source: 'builtin',
+    };
+    const autoCron: SkillInfo = {
+      name: 'cron',
+      description: 'Scheduled task helper',
+      location: '/builtin/cron',
+      is_auto_inject: true,
+      is_custom: false,
+      source: 'cron',
+    };
+
+    expect(
+      resolveTeamRoleDisabledAutoInjectSkills('frontend', [
+        ...managedSkills,
+        autoAionuiConfig,
+        autoCron,
+      ])
+    ).toEqual(['aionui-config', 'cron']);
+  });
+
+  it('does not disable an allowlisted skill merely because it is auto-injected', () => {
+    const autoSkillDesign: SkillInfo = {
+      ...managedSkills.find((skill) => skill.name === 'skill-design')!,
+      is_auto_inject: true,
+    };
+
+    expect(
+      resolveTeamRoleDisabledAutoInjectSkills('frontend', [
+        autoSkillDesign,
+      ])
+    ).toEqual([]);
+  });
+
   it('keeps project-specific workspace skills out of global role defaults', () => {
     expect(TEAM_ROLE_SKILL_POLICIES.qa.skills).not.toContain('testing');
     expect(TEAM_ROLE_SKILL_POLICIES.architect.skills).not.toContain('architecture');
@@ -565,6 +606,61 @@ describe('team role profiles', () => {
         defaults: expect.objectContaining({
           skills: { mode: 'fixed', value: ['ship-gate'] },
         }),
+      })
+    );
+  });
+
+  it('persists auto-inject exclusions on a managed Team role', async () => {
+    const autoAionuiConfig: SkillInfo = {
+      name: 'aionui-config',
+      description: 'AionUi configuration helper',
+      location: '/builtin/aionui-config',
+      is_auto_inject: true,
+      is_custom: false,
+      source: 'builtin',
+    };
+    const autoCron: SkillInfo = {
+      name: 'cron',
+      description: 'Scheduled task helper',
+      location: '/builtin/cron',
+      is_auto_inject: true,
+      is_custom: false,
+      source: 'cron',
+    };
+
+    const createAssistant = vi.fn(async (request) => ({
+      ...baseAssistant,
+      id: request.id!,
+      name: request.name,
+      source: 'user' as const,
+      enabled_skills: request.enabled_skills ?? [],
+      disabled_builtin_skills:
+        request.disabled_builtin_skills ?? [],
+    }));
+
+    await provisionTeamRoleAssistant(
+      { baseAssistantId: baseAssistant.id, specialty: 'frontend' },
+      {
+        listAssistants: vi.fn(async () => [baseAssistant]),
+        getAssistant: vi.fn(async () => baseDetail),
+        createAssistant,
+        updateAssistant: vi.fn(),
+        setAssistantState: vi.fn(async () => undefined),
+        listAvailableSkills: vi.fn(async () => [
+          ...managedSkills,
+          autoAionuiConfig,
+          autoCron,
+        ]),
+        writeAssistantRule: vi.fn(async () => undefined),
+      }
+    );
+
+    expect(createAssistant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        disabled_builtin_skills: [
+          'aionui-config',
+          'cron',
+        ],
       })
     );
   });

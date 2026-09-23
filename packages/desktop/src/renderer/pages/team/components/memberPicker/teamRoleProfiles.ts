@@ -251,6 +251,22 @@ export function resolveTeamRoleSkills(
     .slice(0, limit);
 }
 
+export function resolveTeamRoleDisabledAutoInjectSkills(
+  specialty: ProvisionableTeamMemberSpecialty,
+  availableSkills: SkillInfo[]
+): string[] {
+  const allowedNames = new Set(teamRoleAllowedSkillNames(specialty));
+
+  return availableSkills
+    .filter(
+      (skill) =>
+        skill.is_auto_inject &&
+        !allowedNames.has(skill.name)
+    )
+    .map((skill) => skill.name)
+    .sort();
+}
+
 export async function ensureTeamRoleSkills(
   specialty: ProvisionableTeamMemberSpecialty,
   deps: Pick<TeamRoleProfileDeps, 'listAvailableSkills'>
@@ -355,10 +371,14 @@ export async function provisionTeamRoleAssistant(
 
   const profile = TEAM_ROLE_PROFILES[input.specialty];
   const roleAssistantId = teamRoleAssistantId(base.id, input.specialty);
-  const [baseDetail, matchedSkills] = await Promise.all([
+  const [baseDetail, availableSkills] = await Promise.all([
     deps.getAssistant(base.id),
-    ensureTeamRoleSkills(input.specialty, deps),
+    deps.listAvailableSkills(),
   ]);
+
+  const matchedSkills = await ensureTeamRoleSkills(input.specialty, {
+    listAvailableSkills: async () => availableSkills,
+  });
   // Managed Team roles use a curated exact-name catalog. Do not inherit arbitrary
   // base-assistant skills: that is how unrelated office/presentation skills can
   // leak into PM/Dev/QA profiles.
@@ -366,7 +386,14 @@ export async function provisionTeamRoleAssistant(
   const customSkillNames = matchedSkills
     .filter((skill) => skill.is_custom)
     .map((skill) => skill.name);
-  const disabledBuiltinSkills = baseDetail.capabilities.default_disabled_builtin_skill_ids ?? [];
+  // Managed Team roles are capability-isolated. AionCore interprets this
+  // legacy-named field as the exclusion set for auto-injected skills.
+  // Disable every automatic capability outside the role's explicit policy
+  // instead of inheriting the base assistant's usually-empty exclusion list.
+  const disabledBuiltinSkills = resolveTeamRoleDisabledAutoInjectSkills(
+    input.specialty,
+    availableSkills
+  );
   const name = `${base.name} ${profile.label}`;
   const description = `[Team Role Profile v3 / pinned curated skills] ${profile.description}`;
   const defaults = cloneBaseDefaults(baseDetail, skillNames, profile.permissionMode);
