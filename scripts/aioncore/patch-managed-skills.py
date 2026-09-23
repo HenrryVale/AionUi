@@ -552,6 +552,132 @@ async fn claude_uses_injected_delivery_after_managed_skill_hardening() {
     acp_factory_file = root / "crates/aionui-ai-agent/src/factory/acp.rs"
     atext = acp_factory_file.read_text(encoding="utf-8")
 
+    router_bootstrap_anchor = "pub(super) async fn build(\n"
+    router_bootstrap_helper = r'''
+fn managed_team_router_bootstrap_required(
+    belongs_to_team: bool,
+    skills: &[String],
+) -> bool {
+    belongs_to_team && skills.iter().any(|name| name == "skill-design")
+}
+
+fn managed_skill_body(raw: &str) -> Result<&str, AgentError> {
+    let Some(rest) = raw.strip_prefix("---\n") else {
+        return Ok(raw);
+    };
+
+    let Some((_, body)) = rest.split_once("\n---\n") else {
+        return Err(AgentError::internal(
+            "managed Team router bootstrap found malformed skill-design frontmatter",
+        ));
+    };
+
+    Ok(body)
+}
+
+fn inject_bootstrapped_skill(
+    prefix: &str,
+    skill_name: &str,
+    skill_root: &str,
+    body: &str,
+) -> Result<String, AgentError> {
+    const CLOSE_RULES: &str = "[/Assistant Rules]";
+
+    let Some(close_at) = prefix.rfind(CLOSE_RULES) else {
+        return Err(AgentError::internal(
+            "managed Team router bootstrap requires an Assistant Rules block",
+        ));
+    };
+
+    let mut out =
+        String::with_capacity(prefix.len() + body.len() + skill_root.len() + 128);
+
+    out.push_str(&prefix[..close_at]);
+    out.push_str("\n\n## Bootstrapped Skill: ");
+    out.push_str(skill_name);
+    out.push_str(
+        "\nSkill root (resolve every relative path in this body against it): "
+    );
+    out.push_str(skill_root);
+    out.push_str("\n\n");
+    out.push_str(body.trim());
+    out.push('\n');
+    out.push_str(CLOSE_RULES);
+    out.push_str(&prefix[close_at + CLOSE_RULES.len()..]);
+
+    Ok(out)
+}
+
+async fn bootstrap_managed_team_router_prefix(
+    conversation_id: &str,
+    belongs_to_team: bool,
+    skills: &[String],
+    skill_dirs: &[aionui_session::SkillDirSpec],
+    prefix: Option<String>,
+) -> Result<Option<String>, AgentError> {
+    if !managed_team_router_bootstrap_required(belongs_to_team, skills) {
+        return Ok(prefix);
+    }
+
+    let router_dirs: Vec<_> = skill_dirs
+        .iter()
+        .filter(|skill| skill.name == "skill-design")
+        .collect();
+
+    if router_dirs.len() != 1 {
+        return Err(AgentError::internal(format!(
+            "managed Team router bootstrap expected exactly one resolved skill-design source, found {}",
+            router_dirs.len()
+        )));
+    }
+
+    let router = router_dirs[0];
+    let skill_file = std::path::Path::new(&router.path).join("SKILL.md");
+
+    let raw = tokio::fs::read_to_string(&skill_file)
+        .await
+        .map_err(|error| {
+            AgentError::internal(format!(
+                "managed Team router bootstrap could not read skill-design: {error}"
+            ))
+        })?;
+
+    let body = managed_skill_body(&raw)?;
+
+    if body.trim().is_empty() {
+        return Err(AgentError::internal(
+            "managed Team router bootstrap resolved an empty skill-design body",
+        ));
+    }
+
+    let prefix = prefix.ok_or_else(|| {
+        AgentError::internal(
+            "managed Team router bootstrap requires an injected Assistant Rules prefix",
+        )
+    })?;
+
+    let bootstrapped =
+        inject_bootstrapped_skill(&prefix, "skill-design", &router.path, body)?;
+
+    tracing::info!(
+        conversation_id,
+        skill = "skill-design",
+        source = %router.path,
+        "managed Team router bootstrap injected full skill body"
+    );
+
+    Ok(Some(bootstrapped))
+}
+'''
+
+    atext = replace_once(
+        atext,
+        router_bootstrap_anchor,
+        router_bootstrap_helper + router_bootstrap_anchor,
+        "managed Team router bootstrap helper",
+    )
+
+
     old_direct_cli_delivery = """        let delivery = crate::factory::resolve_skill_delivery(
             deps.as_ref(),
             &ctx.user_id,
@@ -578,7 +704,7 @@ async fn claude_uses_injected_delivery_after_managed_skill_hardening() {
             &delivery.plan.mode,
             aionui_api_types::SkillDeliveryMode::Injected
         ) {
-            delivery.injected_prefix = crate::factory::compose_injected_prefix_for(
+            let composed = crate::factory::compose_injected_prefix_for(
                 deps.as_ref(),
                 &ctx.user_id,
                 config.preset_context.as_deref(),
@@ -586,6 +712,16 @@ async fn claude_uses_injected_delivery_after_managed_skill_hardening() {
                 &delivery.plan.mode,
             )
             .await;
+
+            delivery.injected_prefix =
+                bootstrap_managed_team_router_prefix(
+                    &ctx.conversation_id,
+                    build_context.belongs_to_team,
+                    &config.skills,
+                    &delivery.skill_dirs,
+                    composed,
+                )
+                .await?;
         }
 
         let instance = crate::session_agent::build_session_instance(
@@ -596,6 +732,108 @@ async fn claude_uses_injected_delivery_after_managed_skill_hardening() {
         new_direct_cli_delivery,
         "direct CLI managed injected prefix composition",
     )
+    router_bootstrap_tests = r'''
+
+#[cfg(test)]
+mod managed_team_router_bootstrap_tests {
+    use super::*;
+
+    #[test]
+    fn team_snapshot_with_skill_design_requires_router_bootstrap() {
+        assert!(managed_team_router_bootstrap_required(
+            true,
+            &[
+                "skill-design".to_owned(),
+                "ux-heuristics".to_owned()
+            ]
+        ));
+    }
+
+    #[test]
+    fn ordinary_conversation_does_not_bootstrap_router() {
+        assert!(!managed_team_router_bootstrap_required(
+            false,
+            &["skill-design".to_owned()]
+        ));
+    }
+
+    #[test]
+    fn team_without_skill_design_does_not_bootstrap_router() {
+        assert!(!managed_team_router_bootstrap_required(
+            true,
+            &["ship-gate".to_owned()]
+        ));
+    }
+
+    #[tokio::test]
+    async fn team_router_bootstrap_injects_full_skill_body() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("skill-design");
+
+        std::fs::create_dir_all(&root).unwrap();
+
+        std::fs::write(
+            root.join("SKILL.md"),
+            "---\nname: skill-design\ndescription: router\n---\nROUTER_BODY_MARKER",
+        )
+        .unwrap();
+
+        let dirs = vec![aionui_session::SkillDirSpec {
+            name: "skill-design".to_owned(),
+            path: root.to_string_lossy().into_owned(),
+        }];
+
+        let result = bootstrap_managed_team_router_prefix(
+            "conv-router-test",
+            true,
+            &["skill-design".to_owned()],
+            &dirs,
+            Some(
+                "[Assistant Rules]\n## Available Skills\n- **skill-design**: router\n[/Assistant Rules]"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert!(result.contains("## Bootstrapped Skill: skill-design"));
+        assert!(result.contains("ROUTER_BODY_MARKER"));
+        assert!(result.contains("Skill root"));
+        assert!(result.ends_with("[/Assistant Rules]"));
+    }
+
+    #[tokio::test]
+    async fn missing_router_source_fails_closed() {
+        let error = bootstrap_managed_team_router_prefix(
+            "conv-router-test",
+            true,
+            &["skill-design".to_owned()],
+            &[],
+            Some(
+                "[Assistant Rules]\n[/Assistant Rules]".to_owned()
+            ),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains(
+                    "expected exactly one resolved skill-design source"
+                )
+        );
+    }
+}
+'''
+
+    if "mod managed_team_router_bootstrap_tests" in atext:
+        fail("managed Team router bootstrap tests already present")
+
+    atext += router_bootstrap_tests
+
+
     acp_factory_file.write_text(atext, encoding="utf-8")
 
     session_agent_file = root / "crates/aionui-ai-agent/src/session_agent.rs"
