@@ -80,6 +80,9 @@ RUN --mount=type=tmpfs,target=/tmp \
     cargo test --locked -p aionui-ai-agent managed_direct_cli_skill_delivery_tests; \
     cargo test --locked -p aionui-ai-agent managed_team_router_bootstrap_tests; \
     cargo test --locked -p aionui-ai-agent managed_team_skill_routing_tests; \
+    cargo test --locked -p aionui-team s9_session_send_message_wakes_lead; \
+    cargo test --locked -p aionui-team teammate_first_wake_uses_canonical_prompt_at_service_boundary; \
+    cargo test --locked -p aionui-team recognized_command_is_sent_bare; \
     cargo test --locked -p aionui-db --test agent_skill_delivery_migration; \
     cargo build --locked --release -p aionui-app; \
     test -x /src/aioncore/target/release/aioncore; \
