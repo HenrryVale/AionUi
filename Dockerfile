@@ -169,6 +169,10 @@ RUN cmp \
     /app/packages/desktop/src/renderer/pages/team/components/memberPicker/teamRoleSkillPolicy.snapshot.json \
     /opt/skill-design/pack/aionui-team-roles.json
 
+# Per-turn managed skill routing is user-visible; keep its renderer/parser under
+# the same reproducible image-build gate as the managed AionCore routing tests.
+RUN bunx vitest run tests/unit/renderer/messageTipsManagedSkillRouting.dom.test.tsx
+
 # Renderer SPA → out/renderer (consumed by pack-web-cli.js as static/).
 RUN NODE_OPTIONS=--max-old-space-size=8192 \
     bunx electron-vite build --config packages/desktop/electron.vite.config.ts
