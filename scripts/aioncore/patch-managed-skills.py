@@ -1589,6 +1589,34 @@ mod managed_direct_cli_skill_delivery_tests {
     )
     aionrs_test_file.write_text(aionrs_test, encoding="utf-8")
 
+    # SessionAgent has eight direct SendMessageData literals in its test module.
+    # Adding routing_content to the shared struct makes those Rust literals
+    # compile-time incomplete even though serde(default) covers wire decoding.
+    # Keep the migration explicit and counted so upstream drift fails closed.
+    send_message_literal_pattern = re.compile(
+        r"(SendMessageData \\{\\n(?P<indent>\\s*)content: [^\\n]+,\\n)"
+        r"(?P=indent)msg_id:"
+    )
+
+    def add_none_routing_content(match):
+        indent = match.group("indent")
+        return (
+            match.group(1)
+            + f"{indent}routing_content: None,\\n"
+            + f"{indent}msg_id:"
+        )
+
+    stext, send_message_literal_count = send_message_literal_pattern.subn(
+        add_none_routing_content,
+        stext,
+    )
+    if send_message_literal_count != 8:
+        fail(
+            "SessionAgent SendMessageData routing_content migration: "
+            f"expected 8 literals, found {send_message_literal_count}"
+        )
+    session_agent_file.write_text(stext, encoding="utf-8")
+
     # Existing integration tests now also prove that governance stays in model
     # content while semantic routing input remains the exact structured message.
     team_integration_file = root / "crates/aionui-team/tests/session_service_integration.rs"
