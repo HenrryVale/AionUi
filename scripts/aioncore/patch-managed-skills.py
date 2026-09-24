@@ -1954,7 +1954,24 @@ mod managed_direct_cli_skill_delivery_tests {
                 has_struct_update = bool(
                     re.search(r"(?m)^\s*\.\.[A-Za-z_]", literal_text)
                 )
-                if f"{field_name}:" not in literal_text and not has_struct_update:
+                explicit_field = bool(
+                    re.search(
+                        rf"(?m)^\s*{re.escape(field_name)}\s*:",
+                        literal_text,
+                    )
+                )
+                shorthand_field = bool(
+                    re.search(
+                        rf"(?m)^\s*{re.escape(field_name)}\s*,\s*$",
+                        literal_text,
+                    )
+                )
+
+                if (
+                    not explicit_field
+                    and not shorthand_field
+                    and not has_struct_update
+                ):
                     missing.append(location)
 
         if checked != expected_literals:
