@@ -1479,6 +1479,17 @@ mod managed_direct_cli_skill_delivery_tests {
         "                inject_skills: request.inject_skills,\n",
         "internal conversation semantic routing propagation",
     )
+    conversation_service = replace_once(
+        conversation_service,
+        "        let data = aionui_ai_agent::types::SendMessageData {\n"
+        "            content: resolved.content.clone(),\n"
+        "            msg_id: user_msg_id.clone(),\n",
+        "        let data = aionui_ai_agent::types::SendMessageData {\n"
+        "            content: resolved.content.clone(),\n"
+        "            routing_content: None,\n"
+        "            msg_id: user_msg_id.clone(),\n",
+        "mid-turn SendMessageData semantic routing default",
+    )
     conversation_service_file.write_text(conversation_service, encoding="utf-8")
 
     turn_file = root / "crates/aionui-conversation/src/turn_orchestrator.rs"
@@ -1840,6 +1851,84 @@ mod managed_direct_cli_skill_delivery_tests {
 
     agent_lock_file.write_text(lock_text, encoding="utf-8")
 
+    # Exhaustive compile-shape guard for every shared struct extended by FIX-2C.
+    # The AionCore source commit is pinned above, so literal counts are part of
+    # the audited contract. A missed constructor now fails here in <1s instead
+    # of surfacing after a long cargo build.
+    def validate_struct_field_literals(
+        type_name: str,
+        field_name: str,
+        expected_literals: int,
+    ) -> None:
+        needle = f"{type_name} {{"
+        checked = 0
+        missing = []
+
+        for rust_file in sorted((root / "crates").rglob("*.rs")):
+            source_lines = rust_file.read_text(encoding="utf-8").splitlines()
+
+            for index, line in enumerate(source_lines):
+                if needle not in line:
+                    continue
+
+                stripped = line.strip()
+                if (
+                    f"struct {type_name} {{" in stripped
+                    or stripped.startswith("impl ")
+                ):
+                    continue
+
+                checked += 1
+                window = "\n".join(source_lines[index:index + 24])
+
+                # Rust struct-update syntax inherits routing_content from the
+                # source value, so an explicit field is not required there.
+                has_struct_update = bool(re.search(r"(?m)^\s*\.\.[A-Za-z_]", window))
+                if f"{field_name}:" not in window and not has_struct_update:
+                    missing.append(f"{rust_file.relative_to(root)}:{index + 1}")
+
+        if checked != expected_literals:
+            fail(
+                f"{type_name} literal audit: expected {expected_literals}, "
+                f"found {checked}"
+            )
+        if missing:
+            fail(
+                f"{type_name} literals missing {field_name}: "
+                + ", ".join(missing)
+            )
+
+    validate_struct_field_literals(
+        "SendMessageData",
+        "routing_content",
+        19,
+    )
+    validate_struct_field_literals(
+        "ConversationAgentTurnRequest",
+        "routing_content",
+        3,
+    )
+    validate_struct_field_literals(
+        "AgentTurnRequest",
+        "routing_content",
+        1,
+    )
+    validate_struct_field_literals(
+        "WakeInput",
+        "routing_content",
+        1,
+    )
+    validate_struct_field_literals(
+        "TurnStartInput",
+        "routing_content",
+        2,
+    )
+
+    print(
+        "PASS: exhaustive FIX-2C struct literal audit "
+        "(SendMessageData=19, ConversationAgentTurnRequest=3, "
+        "AgentTurnRequest=1, WakeInput=1, TurnStartInput=2)."
+    )
     print("Patched AionCore managed skills, direct-CLI injected delivery, and dynamic Team role modes.")
     return 0
 
