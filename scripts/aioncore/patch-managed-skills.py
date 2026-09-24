@@ -1923,14 +1923,38 @@ mod managed_direct_cli_skill_delivery_tests {
                 checked += 1
                 location = f"{rust_file.relative_to(root)}:{index + 1}"
                 locations.append(location)
-                window = "\n".join(source_lines[index:index + 24])
+
+                # Bound the audit to this literal, not an arbitrary N-line
+                # window that could accidentally see a field in the next
+                # constructor. Every pinned literal closes at the same-or-less
+                # indentation with a Rust closing brace token.
+                start_indent = len(line) - len(line.lstrip())
+                end_index = None
+                for candidate_index in range(index + 1, min(len(source_lines), index + 96)):
+                    candidate = source_lines[candidate_index]
+                    stripped_candidate = candidate.strip()
+                    candidate_indent = len(candidate) - len(candidate.lstrip())
+                    if (
+                        candidate_indent <= start_indent
+                        and stripped_candidate.startswith("}")
+                    ):
+                        end_index = candidate_index
+                        break
+
+                if end_index is None:
+                    fail(
+                        f"{type_name} literal audit could not find closing brace "
+                        f"for {location}"
+                    )
+
+                literal_text = "\n".join(source_lines[index:end_index + 1])
 
                 # Rust struct-update syntax inherits the new field from the
                 # source value, so an explicit field is not required there.
                 has_struct_update = bool(
-                    re.search(r"(?m)^\s*\.\.[A-Za-z_]", window)
+                    re.search(r"(?m)^\s*\.\.[A-Za-z_]", literal_text)
                 )
-                if f"{field_name}:" not in window and not has_struct_update:
+                if f"{field_name}:" not in literal_text and not has_struct_update:
                     missing.append(location)
 
         if checked != expected_literals:
