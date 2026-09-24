@@ -174,7 +174,7 @@ RUN cmp \
 
 # Per-turn managed skill routing is user-visible; keep its renderer/parser under
 # the same reproducible image-build gate as the managed AionCore routing tests.
-RUN bunx vitest run tests/unit/renderer/messageTipsManagedSkillRouting.dom.test.tsx
+RUN bunx vitest run --project dom tests/unit/renderer/messageTipsManagedSkillRouting.dom.test.tsx
 
 # Renderer SPA → out/renderer (consumed by pack-web-cli.js as static/).
 RUN NODE_OPTIONS=--max-old-space-size=8192 \
