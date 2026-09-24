@@ -6,7 +6,7 @@
 
 import type { IMessageTips } from '@/common/chat/chatLib';
 import { Collapse, Tag } from '@arco-design/web-react';
-import { Attention, CheckOne, Info } from '@icon-park/react';
+import { Attention, CheckOne, Info, Lightning } from '@icon-park/react';
 import classNames from 'classnames';
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -48,6 +48,45 @@ const ownershipColor = {
   unknown_upstream: 'gray',
 };
 
+type ManagedSkillRoutingView = {
+  taskClass: string;
+  route: string;
+  primary: string;
+  supports: string[];
+  gates: string[];
+  loadedSkills: string[];
+};
+
+const toStringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.length > 0) : [];
+
+export const parseManagedSkillRoutingParams = (
+  code: IMessageTips['content']['code'],
+  params: IMessageTips['content']['params']
+): ManagedSkillRoutingView | null => {
+  if (code !== 'MANAGED_SKILL_ROUTING' || !params || typeof params !== 'object') return null;
+
+  const taskClass = typeof params.task_class === 'string' ? params.task_class : '';
+  const route = typeof params.route === 'string' ? params.route : '';
+  const primary = typeof params.primary === 'string' ? params.primary : '';
+  const supports = toStringArray(params.supports);
+  const gates = toStringArray(params.gates);
+  const reportedLoaded = toStringArray(params.loaded_skills);
+
+  if (!taskClass || !route || !primary) return null;
+
+  const loadedSkills = Array.from(new Set(reportedLoaded.length > 0 ? reportedLoaded : [primary, ...supports, ...gates]));
+
+  return {
+    taskClass,
+    route,
+    primary,
+    supports,
+    gates,
+    loadedSkills,
+  };
+};
+
 const resolveAgentTipBody = (
   content: string,
   code: IMessageTips['content']['code'],
@@ -65,6 +104,7 @@ const MessageTips: React.FC<{ message: IMessageTips }> = ({ message }) => {
   const { t } = useTranslation();
   const { content, type, code, params } = message.content;
   const structuredError = type === 'error' ? message.content.error : undefined;
+  const managedSkillRouting = useMemo(() => parseManagedSkillRoutingParams(code, params), [code, params]);
   const localizedTipBody = resolveAgentTipBody(content, code, params, t);
   const { json, data } = useFormatContent(localizedTipBody);
 
@@ -75,6 +115,44 @@ const MessageTips: React.FC<{ message: IMessageTips }> = ({ message }) => {
   // what the Butler diagnoses best.
   const shouldShowButler = type === 'error';
   const shouldShowFeedback = type === 'error' && structuredError?.feedback_recommended !== false;
+
+  if (managedSkillRouting) {
+    return (
+      <div className='w-full' data-testid='managed-skill-routing'>
+        <div className='bg-message-tips rd-8px p-x-12px p-y-10px flex flex-col gap-8px'>
+          <div className='flex flex-wrap items-center gap-6px'>
+            <Lightning theme='filled' size={16} fill={iconColors.primary} />
+            <span className='font-500 text-13px' data-testid='managed-skill-routing-count'>
+              {t('conversation.skills.loaded')} ({managedSkillRouting.loadedSkills.length})
+            </span>
+            <Tag size='small' color='gray' data-testid='managed-skill-routing-route'>
+              {managedSkillRouting.route}
+            </Tag>
+          </div>
+
+          <div className='flex flex-wrap gap-6px'>
+            <Tag size='small' color='arcoblue' data-testid='managed-skill-routing-primary'>
+              Primary · {managedSkillRouting.primary}
+            </Tag>
+            {managedSkillRouting.supports.map((skill) => (
+              <Tag key={`support:${skill}`} size='small' data-testid='managed-skill-routing-support'>
+                Support · {skill}
+              </Tag>
+            ))}
+            {managedSkillRouting.gates.map((skill) => (
+              <Tag key={`gate:${skill}`} size='small' color='orange' data-testid='managed-skill-routing-gate'>
+                Gate · {skill}
+              </Tag>
+            ))}
+          </div>
+
+          <div className='text-12px text-t-tertiary' data-testid='managed-skill-routing-task-class'>
+            {managedSkillRouting.taskClass}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (structuredError) {
     const errorCode = structuredError.code;
