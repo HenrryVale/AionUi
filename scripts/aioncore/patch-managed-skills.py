@@ -1137,7 +1137,7 @@ mod managed_direct_cli_skill_delivery_tests {
         let routed = match self.managed_team_routing.as_ref() {
             Some(routing) => Some(
                 routing
-                    .route_and_render(&data.content)
+                    .route_and_render(data.routing_content.as_deref().unwrap_or(&data.content))
                     .await
                     .map_err(|error| {
                         AgentSendError::from_agent_error(AgentError::internal(
@@ -1226,121 +1226,24 @@ mod managed_direct_cli_skill_delivery_tests {
         fail("managed Team routing module already exists")
     routing_file.write_text(routing_source, encoding="utf-8")
 
-    # FIX-2C: Team wake payloads contain governance/role text before the actual
-    # task. Route only on semantic task content so words such as permission,
-    # secret, or password in Team Governance cannot create false security gates.
+    # FIX-2C: carry semantic Team task content as structured turn metadata.
+    # Routing must never parse the human-readable Team Governance/wake prompt:
+    # that format is intentionally readable and therefore ambiguous when user
+    # content contains strings that look like mailbox headers. The Team layer
+    # already owns structured mailbox/task data, so extract intent there and
+    # carry it through AgentTurnRequest -> ConversationAgentTurnRequest ->
+    # TurnStartInput -> SendMessageData. Ordinary callers use None.
+
     rtext = routing_file.read_text(encoding="utf-8")
-
-    task_scope_helper = r'''fn managed_routing_task_scope(content: &str) -> &str {
-    const NEW_MESSAGES: &str = "## New Messages\n\n";
-    const TASK_BOARD: &str = "## Current Task Board Summary";
-    const USER_MESSAGE: &str = "- From `user` [message]: ";
-
-    let Some(messages_marker) = content.find(NEW_MESSAGES) else {
-        return content;
-    };
-
-    let after_messages = &content[messages_marker + NEW_MESSAGES.len()..];
-    let task_board_start = after_messages.find(TASK_BOARD);
-    let messages = match task_board_start {
-        Some(index) => &after_messages[..index],
-        None => after_messages,
-    };
-
-    // Lead/direct-user turns: route only the latest real user message.
-    if let Some(user_start) = messages.rfind(USER_MESSAGE) {
-        let user_content = &messages[user_start + USER_MESSAGE.len()..];
-        let user_end = user_content
-            .find("\n- From `")
-            .unwrap_or(user_content.len());
-        let task = user_content[..user_end].trim();
-
-        if !task.is_empty() {
-            return task;
-        }
-    }
-
-    // Teammate/task wake-up fallback: classify the task-board payload while
-    // keeping Team Governance and role/tool instructions out of task intent.
-    if let Some(index) = task_board_start {
-        return after_messages[index..].trim();
-    }
-
-    // Non-standard Team payload: preserve fail-closed classification semantics
-    // but constrain the scope to the wake payload rather than governance.
-    messages.trim()
-}
-
-'''
-    rtext = replace_once(
-        rtext,
-        "fn classify_managed_task(content: &str) -> Result<ClassifiedRoute, String> {",
-        task_scope_helper
-        + "fn classify_managed_task(content: &str) -> Result<ClassifiedRoute, String> {",
-        "managed Team semantic routing scope helper",
-    )
-    rtext = replace_once(
-        rtext,
-        "    let classified = classify_managed_task(content)?;",
-        "    let task_content = managed_routing_task_scope(content);\n"
-        "    let classified = classify_managed_task(task_content)?;",
-        "managed Team semantic task classification",
-    )
-    rtext = replace_once(
-        rtext,
-        "    for condition in required_gate_conditions(content) {",
-        "    for condition in required_gate_conditions(task_content) {",
-        "managed Team semantic gate classification",
-    )
-
-    wrapper_tests_anchor = r'''    #[test]
+    sensitive_test_anchor = r'''    #[test]
     fn primary_and_support_are_read_from_yaml_not_hardcoded_pair() {
 '''
-    wrapper_tests = r'''    #[test]
-    fn team_governance_does_not_add_false_sensitive_gate() {
-        let wrapped = format!(
-            "Team: \"a1\"\n\n\
-             ## Team Governance\n\
-             Follow permission and authorization rules. Never expose a secret or password.\n\n\
-             ## New Messages\n\n\
-             - From `user` [message]: {A1_TASK}\n\n\
-             ## Current Task Board Summary\n\n\
-             No tasks on the board.\n"
-        );
-
+    sensitive_test = r'''    #[test]
+    fn sensitive_a1_task_adds_security_gate() {
+        let task = format!("{A1_TASK} Revisa también el campo password.");
         let route = route_managed_team_task(
             ROUTER,
-            &wrapped,
-            &frontend_allowlist(),
-        )
-        .unwrap();
-
-        assert_eq!(route.task_class, "ux_audit");
-        assert_eq!(route.route, "design.ux_audit");
-        assert_eq!(route.primary, "ux-heuristics");
-        assert_eq!(route.support, vec!["refactoring-ui"]);
-        assert!(
-            route.gates.is_empty(),
-            "Team governance must not influence task gates: {:?}",
-            route.gates
-        );
-    }
-
-    #[test]
-    fn sensitive_user_message_still_adds_security_gate() {
-        let wrapped = format!(
-            "Team: \"a1\"\n\n\
-             ## Team Governance\n\
-             Follow permission rules.\n\n\
-             ## New Messages\n\n\
-             - From `user` [message]: {A1_TASK} Revisa también el campo password.\n\n\
-             ## Current Task Board Summary\n\n\
-             No tasks on the board.\n"
-        );
-
-        let route = route_managed_team_task(
-            ROUTER,
-            &wrapped,
+            &task,
             &frontend_allowlist(),
         )
         .unwrap();
@@ -1352,11 +1255,348 @@ mod managed_direct_cli_skill_delivery_tests {
 '''
     rtext = replace_once(
         rtext,
-        wrapper_tests_anchor,
-        wrapper_tests + wrapper_tests_anchor,
-        "managed Team wrapper routing regression tests",
+        sensitive_test_anchor,
+        sensitive_test + sensitive_test_anchor,
+        "managed Team real-sensitive-task routing regression test",
     )
     routing_file.write_text(rtext, encoding="utf-8")
+
+    # SendMessageData: optional semantic routing input. It is internal metadata,
+    # not model-visible content, and defaults to None for every ordinary caller.
+    types_file = root / "crates/aionui-ai-agent/src/types.rs"
+    ttext = types_file.read_text(encoding="utf-8")
+    ttext = replace_once(
+        ttext,
+        "    /// User message content.\n"
+        "    pub content: String,\n"
+        "    /// Client-generated message ID for correlation.\n",
+        "    /// User message content.\n"
+        "    pub content: String,\n"
+        "    /// Semantic task content used only by managed Team routing.\n"
+        "    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n"
+        "    pub routing_content: Option<String>,\n"
+        "    /// Client-generated message ID for correlation.\n",
+        "SendMessageData semantic routing field",
+    )
+    ttext = replace_once(
+        ttext,
+        "            content: \"Hello\".into(),\n"
+        "            msg_id: \"msg-001\".into(),\n",
+        "            content: \"Hello\".into(),\n"
+        "            routing_content: Some(\"semantic task\".into()),\n"
+        "            msg_id: \"msg-001\".into(),\n",
+        "SendMessageData serde test routing field",
+    )
+    ttext = replace_once(
+        ttext,
+        "        assert_eq!(json[\"content\"], \"Hello\");\n",
+        "        assert_eq!(json[\"content\"], \"Hello\");\n"
+        "        assert_eq!(json[\"routing_content\"], \"semantic task\");\n",
+        "SendMessageData serde test routing assertion",
+    )
+    ttext = replace_once(
+        ttext,
+        "        assert_eq!(parsed.content, \"Hello\");\n"
+        "        assert_eq!(parsed.msg_id, \"msg-001\");\n",
+        "        assert_eq!(parsed.content, \"Hello\");\n"
+        "        assert_eq!(parsed.routing_content.as_deref(), Some(\"semantic task\"));\n"
+        "        assert_eq!(parsed.msg_id, \"msg-001\");\n",
+        "SendMessageData serde parsed routing assertion",
+    )
+    ttext = replace_once(
+        ttext,
+        "        assert!(data.turn_id.is_none());\n"
+        "        assert!(data.files.is_empty());\n",
+        "        assert!(data.turn_id.is_none());\n"
+        "        assert!(data.routing_content.is_none());\n"
+        "        assert!(data.files.is_empty());\n",
+        "SendMessageData serde default routing assertion",
+    )
+    types_file.write_text(ttext, encoding="utf-8")
+
+    # Team owns the structured source of truth. Pick the latest normal mailbox
+    # message; if a task wake has no message, use the newest active owned task.
+    team_session_file = root / "crates/aionui-team/src/session.rs"
+    team_session = team_session_file.read_text(encoding="utf-8")
+    team_session = replace_once(
+        team_session,
+        "use crate::types::{MailboxMessage, MailboxMessageType, Team, TeamAgent, TeammateRole, TeammateStatus};",
+        "use crate::types::{MailboxMessage, MailboxMessageType, TaskStatus, Team, TeamAgent, TeammateRole, TeammateStatus};",
+        "Team session TaskStatus import for routing content",
+    )
+    team_session = replace_once(
+        team_session,
+        "    pub first_message: String,\n"
+        "    /// Unread mailbox rows used to build `first_message`. Returned so the\n",
+        "    pub first_message: String,\n"
+        "    /// Structured semantic task content for managed skill routing.\n"
+        "    pub routing_content: String,\n"
+        "    /// Unread mailbox rows used to build `first_message`. Returned so the\n",
+        "WakeInput semantic routing field",
+    )
+    routing_content_anchor = r'''                let (first_message, needs_role_prompt) = if batch.is_command {
+'''
+    routing_content_block = r'''                let routing_content = claimed_unread
+                    .iter()
+                    .rev()
+                    .find(|message| {
+                        message.msg_type == MailboxMessageType::Message
+                            && !message.content.trim().is_empty()
+                    })
+                    .map(|message| message.content.clone())
+                    .or_else(|| {
+                        tasks
+                            .iter()
+                            .filter(|task| task.owner.as_deref() == Some(slot_id))
+                            .filter(|task| matches!(task.status, TaskStatus::Pending | TaskStatus::InProgress))
+                            .max_by_key(|task| task.updated_at)
+                            .map(|task| {
+                                let description = task
+                                    .description
+                                    .as_deref()
+                                    .map(str::trim)
+                                    .filter(|description| !description.is_empty());
+                                match description {
+                                    Some(description) => format!("{}\n{}", task.subject, description),
+                                    None => task.subject.clone(),
+                                }
+                            })
+                    })
+                    .unwrap_or_default();
+
+'''
+    team_session = replace_once(
+        team_session,
+        routing_content_anchor,
+        routing_content_block + routing_content_anchor,
+        "Team structured semantic routing content",
+    )
+    team_session = replace_once(
+        team_session,
+        "                        conversation_id: agent.conversation_id,\n"
+        "                        first_message,\n"
+        "                        unread: claimed_unread,\n",
+        "                        conversation_id: agent.conversation_id,\n"
+        "                        first_message,\n"
+        "                        routing_content,\n"
+        "                        unread: claimed_unread,\n",
+        "WakeInput semantic routing construction",
+    )
+    team_session_file.write_text(team_session, encoding="utf-8")
+
+    ports_file = root / "crates/aionui-team/src/ports.rs"
+    ports = ports_file.read_text(encoding="utf-8")
+    ports = replace_once(
+        ports,
+        "    pub content: String,\n"
+        "    pub files: Vec<String>,\n"
+        "    pub source: AgentTurnSource,\n",
+        "    pub content: String,\n"
+        "    pub routing_content: String,\n"
+        "    pub files: Vec<String>,\n"
+        "    pub source: AgentTurnSource,\n",
+        "AgentTurnRequest semantic routing field",
+    )
+    ports_file.write_text(ports, encoding="utf-8")
+
+    event_loop_file = root / "crates/aionui-team/src/event_loop.rs"
+    event_loop = event_loop_file.read_text(encoding="utf-8")
+    event_loop = replace_once(
+        event_loop,
+        "        content: input.first_message,\n"
+        "        files,\n",
+        "        content: input.first_message,\n"
+        "        routing_content: input.routing_content,\n"
+        "        files,\n",
+        "AgentTurnRequest semantic routing propagation",
+    )
+    event_loop_file.write_text(event_loop, encoding="utf-8")
+
+    adapter_file = root / "crates/aionui-app/src/router/team_conversation_adapters.rs"
+    adapter = adapter_file.read_text(encoding="utf-8")
+    adapter = replace_once(
+        adapter,
+        "                    content: request.content.clone(),\n"
+        "                    files: request.files.clone(),\n",
+        "                    content: request.content.clone(),\n"
+        "                    routing_content: Some(request.routing_content.clone()),\n"
+        "                    files: request.files.clone(),\n",
+        "Team conversation adapter semantic routing propagation",
+    )
+    adapter_file.write_text(adapter, encoding="utf-8")
+
+    conversation_service_file = root / "crates/aionui-conversation/src/service.rs"
+    conversation_service = conversation_service_file.read_text(encoding="utf-8")
+    conversation_service = replace_once(
+        conversation_service,
+        "    pub content: String,\n"
+        "    pub files: Vec<String>,\n"
+        "    pub inject_skills: Vec<String>,\n",
+        "    pub content: String,\n"
+        "    pub routing_content: Option<String>,\n"
+        "    pub files: Vec<String>,\n"
+        "    pub inject_skills: Vec<String>,\n",
+        "ConversationAgentTurnRequest semantic routing field",
+    )
+    conversation_service = replace_once(
+        conversation_service,
+        "            content: resolved.content,\n"
+        "            files: resolved.files,\n"
+        "            inject_skills: req.inject_skills,\n",
+        "            content: resolved.content,\n"
+        "            routing_content: None,\n"
+        "            files: resolved.files,\n"
+        "            inject_skills: req.inject_skills,\n",
+        "ordinary conversation routing metadata default",
+    )
+    conversation_service = replace_once(
+        conversation_service,
+        "                content: request.content,\n"
+        "                files: request.files,\n"
+        "                inject_skills: request.inject_skills,\n",
+        "                content: request.content,\n"
+        "                routing_content: request.routing_content,\n"
+        "                files: request.files,\n"
+        "                inject_skills: request.inject_skills,\n",
+        "internal conversation semantic routing propagation",
+    )
+    conversation_service_file.write_text(conversation_service, encoding="utf-8")
+
+    turn_file = root / "crates/aionui-conversation/src/turn_orchestrator.rs"
+    turn = turn_file.read_text(encoding="utf-8")
+    turn = replace_once(
+        turn,
+        "    pub content: String,\n"
+        "    /// Attachment absolute paths, already resolved.\n",
+        "    pub content: String,\n"
+        "    /// Optional semantic task content for managed Team routing.\n"
+        "    pub routing_content: Option<String>,\n"
+        "    /// Attachment absolute paths, already resolved.\n",
+        "TurnStartInput semantic routing field",
+    )
+    turn = replace_once(
+        turn,
+        "        let mut pending_send = Some((input.send, input.msg_id));\n",
+        "        let continuation_routing_content = input.send.routing_content.clone();\n"
+        "        let mut pending_send = Some((input.send, input.msg_id));\n",
+        "continuation semantic routing capture",
+    )
+    turn = replace_once(
+        turn,
+        "                            content,\n"
+        "                            msg_id: next_turn_msg_id.clone(),\n"
+        "                            turn_id: Some(input.turn_id.clone()),\n",
+        "                            content,\n"
+        "                            routing_content: continuation_routing_content.clone(),\n"
+        "                            msg_id: next_turn_msg_id.clone(),\n"
+        "                            turn_id: Some(input.turn_id.clone()),\n",
+        "continuation SendMessageData semantic routing",
+    )
+    turn = replace_once(
+        turn,
+        "        let initial_send = SendMessageData {\n"
+        "            content: input.content,\n"
+        "            msg_id: first_turn_msg_id.clone(),\n",
+        "        let initial_send = SendMessageData {\n"
+        "            content: input.content,\n"
+        "            routing_content: input.routing_content,\n"
+        "            msg_id: first_turn_msg_id.clone(),\n",
+        "initial SendMessageData semantic routing",
+    )
+    turn_file.write_text(turn, encoding="utf-8")
+
+    # Ordinary ConversationAgentTurnRequest callers explicitly opt out.
+    cron_file = root / "crates/aionui-cron/src/executor.rs"
+    cron = cron_file.read_text(encoding="utf-8")
+    cron = replace_once(
+        cron,
+        "            content: prompt,\n"
+        "            files: vec![],\n",
+        "            content: prompt,\n"
+        "            routing_content: None,\n"
+        "            files: vec![],\n",
+        "cron semantic routing default",
+    )
+    cron_file.write_text(cron, encoding="utf-8")
+
+    relay_test_file = root / "crates/aionui-conversation/tests/stream_relay_tool_call.rs"
+    relay_test = relay_test_file.read_text(encoding="utf-8")
+    relay_test = replace_once(
+        relay_test,
+        "            content: \"run glob\".into(),\n"
+        "            files: Vec::new(),\n",
+        "            content: \"run glob\".into(),\n"
+        "            routing_content: None,\n"
+        "            files: Vec::new(),\n",
+        "conversation relay test semantic routing default",
+    )
+    relay_test_file.write_text(relay_test, encoding="utf-8")
+
+    # SendMessageData test literals outside the turn orchestrator use None.
+    acp_agent_file = root / "crates/aionui-ai-agent/src/manager/acp/agent.rs"
+    acp_agent = acp_agent_file.read_text(encoding="utf-8")
+    acp_agent = replace_once(
+        acp_agent,
+        "            content: \"original team wake\".into(),\n"
+        "            msg_id: \"msg-acp-final\".into(),\n",
+        "            content: \"original team wake\".into(),\n"
+        "            routing_content: None,\n"
+        "            msg_id: \"msg-acp-final\".into(),\n",
+        "ACP final input test semantic routing default",
+    )
+    acp_agent_file.write_text(acp_agent, encoding="utf-8")
+
+    acp_flow_file = root / "crates/aionui-ai-agent/src/manager/acp/agent_session_flow.rs"
+    acp_flow = acp_flow_file.read_text(encoding="utf-8")
+    flow_anchor = "            turn_id: None,\n            files:"
+    flow_count = acp_flow.count(flow_anchor)
+    if flow_count != 4:
+        fail(f"ACP prompt block SendMessageData anchors: expected 4, found {flow_count}")
+    acp_flow = acp_flow.replace(
+        flow_anchor,
+        "            turn_id: None,\n            routing_content: None,\n            files:",
+    )
+    acp_flow_file.write_text(acp_flow, encoding="utf-8")
+
+    aionrs_test_file = root / "crates/aionui-ai-agent/src/manager/aionrs/agent_test.rs"
+    aionrs_test = aionrs_test_file.read_text(encoding="utf-8")
+    aionrs_test = replace_once(
+        aionrs_test,
+        "        turn_id: Some(\"turn-aionrs-final\".to_owned()),\n"
+        "        files: Vec::new(),\n",
+        "        turn_id: Some(\"turn-aionrs-final\".to_owned()),\n"
+        "        routing_content: None,\n"
+        "        files: Vec::new(),\n",
+        "AionRS input test semantic routing default",
+    )
+    aionrs_test_file.write_text(aionrs_test, encoding="utf-8")
+
+    # Existing integration tests now also prove that governance stays in model
+    # content while semantic routing input remains the exact structured message.
+    team_integration_file = root / "crates/aionui-team/tests/session_service_integration.rs"
+    team_integration = team_integration_file.read_text(encoding="utf-8")
+    team_integration = replace_once(
+        team_integration,
+        "    assert!(first_message.contains(\"do X\"));\n",
+        "    assert!(first_message.contains(\"do X\"));\n"
+        "    assert_eq!(worker_request.routing_content, \"do X\");\n",
+        "teammate semantic routing integration assertion",
+    )
+    team_integration_file.write_text(team_integration, encoding="utf-8")
+
+    team_e2e_file = root / "crates/aionui-team/tests/e2e_team_flow.rs"
+    team_e2e = team_e2e_file.read_text(encoding="utf-8")
+    team_e2e = replace_once(
+        team_e2e,
+        "    assert_eq!(request.user_id, \"user-e2e\");\n"
+        "    assert!(request.content.contains(\"user input to team\"));\n",
+        "    assert_eq!(request.user_id, \"user-e2e\");\n"
+        "    assert!(request.content.contains(\"user input to team\"));\n"
+        "    assert_eq!(request.routing_content, \"user input to team\");\n",
+        "lead semantic routing integration assertion",
+    )
+    team_e2e_file.write_text(team_e2e, encoding="utf-8")
+
 
     # FIX-2D: surface the exact per-turn managed routing as a durable Info tip.
     # StreamRelay already forwards and persists Info tips, so the UI can render
