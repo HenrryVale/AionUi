@@ -1595,7 +1595,7 @@ mod managed_direct_cli_skill_delivery_tests {
     # compile-time incomplete even though serde(default) covers wire decoding.
     # Keep the migration explicit and counted so upstream drift fails closed.
     send_message_literal_pattern = re.compile(
-        r"(SendMessageData \\{\\n(?P<indent>\\s*)content: [^\\n]+,\\n)"
+        r"(SendMessageData \{\n(?P<indent>\s*)content: [^\n]+,\n)"
         r"(?P=indent)msg_id:"
     )
 
@@ -1603,7 +1603,7 @@ mod managed_direct_cli_skill_delivery_tests {
         indent = match.group("indent")
         return (
             match.group(1)
-            + f"{indent}routing_content: None,\\n"
+            + f"{indent}routing_content: None,\n"
             + f"{indent}msg_id:"
         )
 
