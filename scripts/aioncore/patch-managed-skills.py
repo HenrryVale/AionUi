@@ -1721,9 +1721,10 @@ mod managed_direct_cli_skill_delivery_tests {
                     "gates": routed.route.gates.clone(),
                     "loaded_skills": routed.loaded_skills.clone(),
                 })),
+                // One card per logical turn: retries/continuations replace it.
                 supersedes_key: Some(format!(
                     "managed-skill-routing:{}",
-                    data.msg_id
+                    data.turn_id.as_deref().unwrap_or(&data.msg_id)
                 )),
             });
 
