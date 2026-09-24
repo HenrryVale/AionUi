@@ -929,7 +929,354 @@ mod managed_direct_cli_skill_delivery_tests {
     if "mod managed_direct_cli_skill_delivery_tests" in stext:
         fail("managed direct CLI skill delivery tests already present")
     stext += direct_cli_tests
+    # FIX-2B: carry the deterministic managed routing context into the direct
+    # session task and render selected skill bodies before Command::Send.
+    old_task_field = """    prompt_dump: Option<SessionPromptDump>,
+}
+"""
+    new_task_field = """    prompt_dump: Option<SessionPromptDump>,
+    /// Present only for a Team direct-CLI session whose managed skill-design
+    /// bootstrap was proven at factory time.
+    managed_team_routing: Option<crate::managed_team_routing::ManagedTeamRoutingContext>,
+}
+"""
+    stext = replace_once(
+        stext,
+        old_task_field,
+        new_task_field,
+        "SessionAgentTask managed Team routing field",
+    )
+
+    old_simple_ctor_tail = """            // No broadcaster: this ctor is the test/simple path, which has no
+            // conversation WebSocket to push a late usage frame to.
+            None,
+        )
+    }
+"""
+    new_simple_ctor_tail = """            // No broadcaster: this ctor is the test/simple path, which has no
+            // conversation WebSocket to push a late usage frame to.
+            None,
+            None,
+        )
+    }
+"""
+    stext = replace_once(
+        stext,
+        old_simple_ctor_tail,
+        new_simple_ctor_tail,
+        "simple SessionAgentTask routing default",
+    )
+
+    old_preload_tail = """            CatalogPreload::from_handshake(handshake),
+            prompt_dump,
+            broadcaster,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build(
+"""
+    new_preload_tail = """            CatalogPreload::from_handshake(handshake),
+            prompt_dump,
+            broadcaster,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_with_preload_and_managed_routing(
+        agent_type: AgentType,
+        conversation_id: String,
+        user_id: String,
+        workspace: String,
+        backend: Arc<dyn SessionBackend>,
+        session_repo: Option<Arc<dyn IAcpSessionRepository>>,
+        handshake: &aionui_api_types::AgentHandshake,
+        prompt_dump: Option<SessionPromptDump>,
+        broadcaster: Option<Arc<dyn EventBroadcaster>>,
+        managed_team_routing: Option<crate::managed_team_routing::ManagedTeamRoutingContext>,
+    ) -> Arc<Self> {
+        Self::build(
+            agent_type,
+            conversation_id,
+            user_id,
+            workspace,
+            backend,
+            session_repo,
+            CatalogPreload::from_handshake(handshake),
+            prompt_dump,
+            broadcaster,
+            managed_team_routing,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build(
+"""
+    stext = replace_once(
+        stext,
+        old_preload_tail,
+        new_preload_tail,
+        "managed routing production constructor",
+    )
+
+    old_build_signature_tail = """        catalog_preload: CatalogPreload,
+        prompt_dump: Option<SessionPromptDump>,
+        broadcaster: Option<Arc<dyn EventBroadcaster>>,
+    ) -> Arc<Self> {
+"""
+    new_build_signature_tail = """        catalog_preload: CatalogPreload,
+        prompt_dump: Option<SessionPromptDump>,
+        broadcaster: Option<Arc<dyn EventBroadcaster>>,
+        managed_team_routing: Option<crate::managed_team_routing::ManagedTeamRoutingContext>,
+    ) -> Arc<Self> {
+"""
+    stext = replace_once(
+        stext,
+        old_build_signature_tail,
+        new_build_signature_tail,
+        "SessionAgentTask build routing argument",
+    )
+
+    old_task_init_tail = """            catalog_preload,
+            command_seq: AtomicI64::new(0),
+            prompt_dump,
+        })
+"""
+    new_task_init_tail = """            catalog_preload,
+            command_seq: AtomicI64::new(0),
+            prompt_dump,
+            managed_team_routing,
+        })
+"""
+    stext = replace_once(
+        stext,
+        old_task_init_tail,
+        new_task_init_tail,
+        "SessionAgentTask routing field initialization",
+    )
+
+    old_production_context_anchor = """        // claude/codex gate through CLI flags, not an installed hook file.
+        permission_hook_body: _,
+    } = inputs;
+
+    // GAP #1/#2 — the pure spec + mode/model mapping (resume anchor → Resume/Fresh,
+"""
+    new_production_context_anchor = """        // claude/codex gate through CLI flags, not an installed hook file.
+        permission_hook_body: _,
+    } = inputs;
+
+    let managed_team_routing =
+        crate::managed_team_routing::build_managed_team_routing_context_from_env(
+            skill_delivery.injected_prefix.as_deref(),
+            &config.skills,
+            &skill_delivery.skill_dirs,
+        )
+        .map_err(|error| {
+            AgentError::internal(format!(
+                "managed Team routing bootstrap failed closed: {error}"
+            ))
+        })?;
+
+    // GAP #1/#2 — the pure spec + mode/model mapping (resume anchor → Resume/Fresh,
+"""
+    stext = replace_once(
+        stext,
+        old_production_context_anchor,
+        new_production_context_anchor,
+        "production managed Team routing context",
+    )
+
+    old_production_ctor = """    let task = SessionAgentTask::new_with_preload(
+        AgentType::Acp,
+        conversation_id,
+        user_id,
+        workspace,
+        backend,
+        acp_session_repo,
+        &metadata.handshake,
+        prompt_dump,
+        // Lets the pump push a usage frame that arrives after the turn's relay has
+        // already stopped listening — the claude case (usage rides `result`).
+        Some(broadcaster),
+    );
+"""
+    new_production_ctor = """    let task = SessionAgentTask::new_with_preload_and_managed_routing(
+        AgentType::Acp,
+        conversation_id,
+        user_id,
+        workspace,
+        backend,
+        acp_session_repo,
+        &metadata.handshake,
+        prompt_dump,
+        // Lets the pump push a usage frame that arrives after the turn's relay has
+        // already stopped listening — the claude case (usage rides `result`).
+        Some(broadcaster),
+        managed_team_routing,
+    );
+"""
+    stext = replace_once(
+        stext,
+        old_production_ctor,
+        new_production_ctor,
+        "production SessionAgentTask managed routing constructor",
+    )
+
+    old_send_start = """    async fn send_message(&self, data: SendMessageData) -> Result<(), AgentSendError> {
+        self.runtime.touch();
+        let content = self.build_prompt_blocks(&data).await;
+        // DEV (`--dump-prompts`): borrow the final blocks BEFORE they move into
+"""
+    new_send_start = """    async fn send_message(&self, data: SendMessageData) -> Result<(), AgentSendError> {
+        self.runtime.touch();
+
+        // Managed Team routing runs before any model turn begins. The original
+        // user payload is left byte-for-byte untouched; the selected managed
+        // skill bodies become a leading text block in Command::Send.
+        let routed = match self.managed_team_routing.as_ref() {
+            Some(routing) => Some(
+                routing
+                    .route_and_render(&data.content)
+                    .await
+                    .map_err(|error| {
+                        AgentSendError::from_agent_error(AgentError::internal(
+                            format!("managed Team routing failed closed: {error}")
+                        ))
+                    })?,
+            ),
+            None => None,
+        };
+
+        let mut content = self.build_prompt_blocks(&data).await;
+
+        if let Some(routed) = routed {
+            tracing::info!(
+                conversation_id = %self.conversation_id,
+                task_class = %routed.route.task_class,
+                route = %routed.route.route,
+                primary = %routed.route.primary,
+                supports = ?routed.route.support,
+                gates = ?routed.route.gates,
+                loaded_skills = ?routed.loaded_skills,
+                "managed skill routing"
+            );
+
+            content.insert(0, ContentBlock::Text(routed.preamble));
+        }
+
+        // DEV (`--dump-prompts`): borrow the final blocks BEFORE they move into
+"""
+    stext = replace_once(
+        stext,
+        old_send_start,
+        new_send_start,
+        "managed routing before direct Session Command::Send",
+    )
+
+
+    # FIX-2B compatibility: upstream tests calling SessionAgentTask::build
+    # directly need the new optional managed_team_routing argument. Production
+    # behaviour is unchanged: these ordinary session tests explicitly pass None.
+    direct_build_tests = (
+        "send_message_dumps_final_input_when_enabled",
+        "send_message_dumps_image_block_raw_base64",
+        "send_message_no_dump_when_disabled",
+    )
+
+    for test_name in direct_build_tests:
+        test_marker = f"async fn {test_name}()"
+        test_start = stext.find(test_marker)
+
+        if test_start < 0:
+            fail(f"FIX-2B compatibility test marker missing: {test_name}")
+
+        call_start = stext.find(
+            "let task = SessionAgentTask::build(",
+            test_start,
+        )
+
+        if call_start < 0:
+            fail(f"FIX-2B direct build call missing in test: {test_name}")
+
+        call_end = stext.find(
+            "        );",
+            call_start,
+        )
+
+        if call_end < 0:
+            fail(f"FIX-2B direct build call end missing in test: {test_name}")
+
+        # Existing final argument is `broadcaster`; append the new optional
+        # managed_team_routing argument immediately before the call closes.
+        stext = (
+            stext[:call_end]
+            + "            None,\n"
+            + stext[call_end:]
+        )
+
     session_agent_file.write_text(stext, encoding="utf-8")
+
+    # Deterministic task -> router.yaml selection engine. This is deliberately
+    # isolated from SessionAgentTask wiring so its policy semantics can be
+    # compiled and tested independently first.
+    routing_source = 'use std::collections::{HashMap, HashSet};\nuse std::path::{Path, PathBuf};\n\nuse aionui_session::SkillDirSpec;\nuse serde::Deserialize;\n\nconst ROUTER_BOOTSTRAP_MARKER: &str = "## Bootstrapped Skill: skill-design";\n\n#[derive(Debug, Deserialize)]\nstruct ManagedRouter {\n    limits: ManagedRouterLimits,\n    modes: HashMap<String, HashMap<String, ManagedRouteSpec>>,\n    #[serde(default)]\n    gates: HashMap<String, String>,\n}\n\n#[derive(Debug, Deserialize)]\nstruct ManagedRouterLimits {\n    primary: usize,\n    support: usize,\n}\n\n#[derive(Debug, Deserialize)]\nstruct ManagedRouteSpec {\n    primary: String,\n    #[serde(default)]\n    support: Vec<String>,\n}\n\n#[derive(Debug, Clone, PartialEq, Eq)]\npub(crate) struct ManagedTaskRoute {\n    pub task_class: String,\n    pub route: String,\n    pub primary: String,\n    pub support: Vec<String>,\n    pub gates: Vec<String>,\n}\n\n#[derive(Debug, Clone, PartialEq, Eq)]\npub(crate) struct ManagedRoutedPrompt {\n    pub route: ManagedTaskRoute,\n    pub preamble: String,\n    pub loaded_skills: Vec<String>,\n}\n\n#[derive(Debug, Clone)]\npub(crate) struct ManagedTeamRoutingContext {\n    router_yaml: String,\n    allowed_skill_names: Vec<String>,\n    skill_sources: HashMap<String, PathBuf>,\n    managed_root: PathBuf,\n}\n\n#[derive(Debug, Clone, Copy, PartialEq, Eq)]\nstruct ClassifiedRoute {\n    task_class: &\'static str,\n    mode: &\'static str,\n    key: &\'static str,\n}\n\nfn contains_any(text: &str, needles: &[&str]) -> bool {\n    needles.iter().any(|needle| text.contains(needle))\n}\n\nfn normalize_task_text(content: &str) -> String {\n    content\n        .to_lowercase()\n        .replace(\'á\', "a")\n        .replace(\'é\', "e")\n        .replace(\'í\', "i")\n        .replace(\'ó\', "o")\n        .replace(\'ú\', "u")\n        .replace(\'ü\', "u")\n}\n\nfn classify_managed_task(content: &str) -> Result<ClassifiedRoute, String> {\n    let text = normalize_task_text(content);\n\n    if contains_any(\n        &text,\n        &[\n            "auditoria ux",\n            "diagnostico ux",\n            "ux audit",\n            "usability audit",\n            "auditoria de usabilidad",\n            "heuristica ux",\n            "heuristicas ux",\n            "problemas de usabilidad",\n        ],\n    ) {\n        return Ok(ClassifiedRoute {\n            task_class: "ux_audit",\n            mode: "design",\n            key: "ux_audit",\n        });\n    }\n\n    if contains_any(\n        &text,\n        &[\n            "design system",\n            "sistema de diseño",\n            "sistema de diseno",\n            "design tokens",\n            "tokens de diseño",\n            "tokens de diseno",\n        ],\n    ) {\n        return Ok(ClassifiedRoute {\n            task_class: "design_system",\n            mode: "design",\n            key: "design_system",\n        });\n    }\n\n    if contains_any(\n        &text,\n        &[\n            "tipografia",\n            "typography",\n            "font pairing",\n            "jerarquia tipografica",\n        ],\n    ) {\n        return Ok(ClassifiedRoute {\n            task_class: "typography",\n            mode: "design",\n            key: "typography",\n        });\n    }\n\n    if contains_any(\n        &text,\n        &[\n            "theme",\n            "tema visual",\n            "dark mode",\n            "light mode",\n            "paleta de colores",\n        ],\n    ) {\n        return Ok(ClassifiedRoute {\n            task_class: "theme",\n            mode: "design",\n            key: "theme",\n        });\n    }\n\n    if contains_any(\n        &text,\n        &[\n            "three.js",\n            "threejs",\n            "escena 3d",\n            "3d interactivo",\n            "interactive 3d",\n        ],\n    ) {\n        return Ok(ClassifiedRoute {\n            task_class: "interactive_3d",\n            mode: "build",\n            key: "interactive_3d",\n        });\n    }\n\n    if contains_any(\n        &text,\n        &[\n            "motion",\n            "animacion",\n            "microinteraccion",\n            "microinteraction",\n            "timeline",\n        ],\n    ) {\n        return Ok(ClassifiedRoute {\n            task_class: "motion",\n            mode: "design",\n            key: "motion",\n        });\n    }\n\n    if contains_any(\n        &text,\n        &[\n            "html interactivo",\n            "interactive html",\n            "artefacto web",\n            "web artifact",\n        ],\n    ) {\n        return Ok(ClassifiedRoute {\n            task_class: "interactive_html",\n            mode: "build",\n            key: "interactive_html",\n        });\n    }\n\n    if contains_any(\n        &text,\n        &[\n            "nueva interfaz",\n            "nueva pagina",\n            "new ui",\n            "new interface",\n            "new page",\n            "crear interfaz",\n            "crear una interfaz",\n        ],\n    ) {\n        return Ok(ClassifiedRoute {\n            task_class: "new_ui",\n            mode: "design",\n            key: "new_ui",\n        });\n    }\n\n    if contains_any(\n        &text,\n        &[\n            "rediseño",\n            "rediseno",\n            "redesign",\n            "refactor ui",\n            "refactorizar interfaz",\n            "interfaz existente",\n            "existing ui",\n        ],\n    ) {\n        return Ok(ClassifiedRoute {\n            task_class: "redesign",\n            mode: "design",\n            key: "redesign",\n        });\n    }\n\n    if contains_any(\n        &text,\n        &[\n            "vulnerabilidad",\n            "security review",\n            "revision de seguridad",\n            "auditoria de seguridad",\n            "autenticacion",\n            "authorization",\n            "autorizacion",\n        ],\n    ) {\n        return Ok(ClassifiedRoute {\n            task_class: "security",\n            mode: "security",\n            key: "default",\n        });\n    }\n\n    if contains_any(\n        &text,\n        &[\n            "debug",\n            "depurar",\n            "bug",\n            "failing test",\n            "test fallando",\n            "error de build",\n            "build failure",\n        ],\n    ) {\n        return Ok(ClassifiedRoute {\n            task_class: "debug",\n            mode: "debug",\n            key: "default",\n        });\n    }\n\n    if contains_any(\n        &text,\n        &[\n            "code review",\n            "revision de codigo",\n            "revisa la implementacion",\n            "review implementation",\n        ],\n    ) {\n        return Ok(ClassifiedRoute {\n            task_class: "implementation_review",\n            mode: "review",\n            key: "implementation",\n        });\n    }\n\n    Err("managed Team router could not classify task".to_owned())\n}\n\nfn task_is_read_only(content: &str) -> bool {\n    let text = normalize_task_text(content);\n    contains_any(\n        &text,\n        &[\n            "no modifiques",\n            "no modificar",\n            "solo lectura",\n            "solo analisis",\n            "read-only",\n            "read only",\n            "do not modify",\n            "do not edit",\n        ],\n    )\n}\n\nfn required_gate_conditions(content: &str) -> Vec<&\'static str> {\n    let text = normalize_task_text(content);\n    let mut result = Vec::new();\n\n    if contains_any(\n        &text,\n        &[\n            "http://",\n            "https://",\n            "contenido externo",\n            "third-party content",\n            "third party content",\n            "contenido de terceros",\n        ],\n    ) {\n        result.push("untrusted_content");\n    }\n\n    if contains_any(\n        &text,\n        &[\n            "autenticacion",\n            "authorization",\n            "autorizacion",\n            "permiso",\n            "permission",\n            "secret",\n            "secreto",\n            "token",\n            "password",\n            "contraseña",\n            "contrasena",\n            "payment",\n            "pago",\n            "upload",\n            "subida de archivos",\n        ],\n    ) {\n        result.push("sensitive_surface");\n    }\n\n    if !task_is_read_only(content)\n        && contains_any(\n            &text,\n            &[\n                "implementa",\n                "implementar",\n                "modifica",\n                "modificar",\n                "corrige",\n                "corregir",\n                "fix ",\n                "refactoriza",\n                "refactorizar",\n                "crea ",\n                "crear ",\n            ],\n        )\n    {\n        result.push("behavior_change");\n    }\n\n    if contains_any(\n        &text,\n        &[\n            "demo publica",\n            "public demo",\n            "placeholder brand",\n            "marca ficticia",\n            "identidad ficticia",\n        ],\n    ) {\n        result.push("public_demo_or_placeholder_brand");\n    }\n\n    result\n}\n\npub(crate) fn route_managed_team_task(\n    router_yaml: &str,\n    content: &str,\n    allowed_skill_names: &[String],\n) -> Result<ManagedTaskRoute, String> {\n    let router: ManagedRouter = serde_yaml::from_str(router_yaml)\n        .map_err(|error| format!("managed Team router YAML is invalid: {error}"))?;\n\n    if router.limits.primary != 1 {\n        return Err(format!(\n            "managed Team router requires limits.primary=1, got {}",\n            router.limits.primary\n        ));\n    }\n\n    let classified = classify_managed_task(content)?;\n\n    let route_spec = router\n        .modes\n        .get(classified.mode)\n        .and_then(|mode| mode.get(classified.key))\n        .ok_or_else(|| {\n            format!(\n                "managed Team router missing route {}.{}",\n                classified.mode, classified.key\n            )\n        })?;\n\n    let allowed: HashSet<&str> =\n        allowed_skill_names.iter().map(String::as_str).collect();\n\n    if !allowed.contains(route_spec.primary.as_str()) {\n        return Err(format!(\n            "managed Team router primary \'{}\' is outside role allowlist",\n            route_spec.primary\n        ));\n    }\n\n    let support_cap = router.limits.support.min(2);\n\n    let support: Vec<String> = route_spec\n        .support\n        .iter()\n        .filter(|name| allowed.contains(name.as_str()))\n        .take(support_cap)\n        .cloned()\n        .collect();\n\n    let mut gates = Vec::new();\n\n    for condition in required_gate_conditions(content) {\n        let skill = router.gates.get(condition).ok_or_else(|| {\n            format!(\n                "managed Team router missing mandatory gate mapping for \'{condition}\'"\n            )\n        })?;\n\n        if !allowed.contains(skill.as_str()) {\n            return Err(format!(\n                "managed Team router mandatory gate \'{}\' is outside role allowlist",\n                skill\n            ));\n        }\n\n        if skill != &route_spec.primary\n            && !support.iter().any(|name| name == skill)\n            && !gates.iter().any(|name| name == skill)\n        {\n            gates.push(skill.clone());\n        }\n    }\n\n    Ok(ManagedTaskRoute {\n        task_class: classified.task_class.to_owned(),\n        route: format!("{}.{}", classified.mode, classified.key),\n        primary: route_spec.primary.clone(),\n        support,\n        gates,\n    })\n}\n\nfn router_bootstrap_active(injected_prefix: Option<&str>) -> bool {\n    injected_prefix.is_some_and(|prefix| prefix.contains(ROUTER_BOOTSTRAP_MARKER))\n}\n\npub(crate) fn build_managed_team_routing_context(\n    injected_prefix: Option<&str>,\n    allowed_skill_names: &[String],\n    skill_dirs: &[SkillDirSpec],\n    router_path: &Path,\n) -> Result<Option<ManagedTeamRoutingContext>, String> {\n    if !router_bootstrap_active(injected_prefix) {\n        return Ok(None);\n    }\n\n    if !allowed_skill_names.iter().any(|name| name == "skill-design") {\n        return Err(\n            "managed Team router bootstrap marker exists but skill-design is absent from allowlist"\n                .to_owned(),\n        );\n    }\n\n    let mut skill_sources = HashMap::new();\n\n    for skill in skill_dirs {\n        let source = PathBuf::from(&skill.path);\n\n        if skill_sources.insert(skill.name.clone(), source).is_some() {\n            return Err(format!(\n                "managed Team routing found duplicate resolved source for \'{}\'",\n                skill.name\n            ));\n        }\n    }\n\n    let router_source = skill_sources.get("skill-design").ok_or_else(|| {\n        "managed Team routing requires resolved skill-design source".to_owned()\n    })?;\n\n    let managed_root = router_source\n        .parent()\n        .ok_or_else(|| {\n            "managed Team routing could not derive managed skill bundle root".to_owned()\n        })?\n        .to_path_buf();\n\n    if router_source.file_name().and_then(|name| name.to_str()) != Some("skill-design") {\n        return Err(\n            "managed Team routing skill-design source has unexpected directory name"\n                .to_owned(),\n        );\n    }\n\n    let router_yaml = std::fs::read_to_string(router_path).map_err(|error| {\n        format!(\n            "managed Team routing could not read router \'{}\': {error}",\n            router_path.display()\n        )\n    })?;\n\n    if router_yaml.trim().is_empty() {\n        return Err("managed Team routing router.yaml is empty".to_owned());\n    }\n\n    serde_yaml::from_str::<ManagedRouter>(&router_yaml)\n        .map_err(|error| format!("managed Team router YAML is invalid: {error}"))?;\n\n    Ok(Some(ManagedTeamRoutingContext {\n        router_yaml,\n        allowed_skill_names: allowed_skill_names.to_vec(),\n        skill_sources,\n        managed_root,\n    }))\n}\n\npub(crate) fn build_managed_team_routing_context_from_env(\n    injected_prefix: Option<&str>,\n    allowed_skill_names: &[String],\n    skill_dirs: &[SkillDirSpec],\n) -> Result<Option<ManagedTeamRoutingContext>, String> {\n    if !router_bootstrap_active(injected_prefix) {\n        return Ok(None);\n    }\n\n    let router_path = std::env::var("AIONUI_MANAGED_SKILL_ROUTER")\n        .map_err(|_| {\n            "managed Team routing is active but AIONUI_MANAGED_SKILL_ROUTER is missing"\n                .to_owned()\n        })?;\n\n    build_managed_team_routing_context(\n        injected_prefix,\n        allowed_skill_names,\n        skill_dirs,\n        Path::new(&router_path),\n    )\n}\n\nimpl ManagedTeamRoutingContext {\n    pub(crate) async fn route_and_render(\n        &self,\n        content: &str,\n    ) -> Result<ManagedRoutedPrompt, String> {\n        let route = route_managed_team_task(\n            &self.router_yaml,\n            content,\n            &self.allowed_skill_names,\n        )?;\n\n        let mut selected = Vec::new();\n        selected.push(route.primary.clone());\n        selected.extend(route.support.iter().cloned());\n        selected.extend(route.gates.iter().cloned());\n\n        let mut seen = HashSet::new();\n        selected.retain(|name| seen.insert(name.clone()));\n\n        let mut rendered = Vec::new();\n\n        for name in &selected {\n            let source = self.skill_sources.get(name).ok_or_else(|| {\n                format!(\n                    "managed Team routing selected \'{}\' but no resolved skill source exists",\n                    name\n                )\n            })?;\n\n            if source.parent() != Some(self.managed_root.as_path()) {\n                return Err(format!(\n                    "managed Team routing selected \'{}\' outside managed bundle root",\n                    name\n                ));\n            }\n\n            let skill_file = source.join("SKILL.md");\n\n            let raw = tokio::fs::read_to_string(&skill_file)\n                .await\n                .map_err(|error| {\n                    format!(\n                        "managed Team routing could not read \'{}\': {error}",\n                        skill_file.display()\n                    )\n                })?;\n\n            let body = aionui_extension::skill_service::extract_skill_body(&raw);\n\n            if body.trim().is_empty() {\n                return Err(format!(\n                    "managed Team routing selected \'{}\' with empty skill body",\n                    name\n                ));\n            }\n\n            rendered.push((\n                name.clone(),\n                source.clone(),\n                body,\n            ));\n        }\n\n        let supports = if route.support.is_empty() {\n            "-".to_owned()\n        } else {\n            route.support.join(",")\n        };\n\n        let gates = if route.gates.is_empty() {\n            "-".to_owned()\n        } else {\n            route.gates.join(",")\n        };\n\n        let mut preamble = format!(\n            "[Managed Team Skill Routing]\\n\\\n             task_class={}\\n\\\n             route={}\\n\\\n             primary={}\\n\\\n             supports={}\\n\\\n             gates={}\\n",\n            route.task_class,\n            route.route,\n            route.primary,\n            supports,\n            gates,\n        );\n\n        for (name, source, body) in &rendered {\n            preamble.push_str("\\n[Skill: ");\n            preamble.push_str(name);\n            preamble.push_str(\n                "]\\nSkill root (resolve every relative path in this body against it): "\n            );\n            preamble.push_str(&source.display().to_string());\n            preamble.push_str("\\n\\n");\n            preamble.push_str(body.trim());\n            preamble.push(\'\\n\');\n        }\n\n        preamble.push_str("[/Managed Team Skill Routing]\\n");\n\n        Ok(ManagedRoutedPrompt {\n            route,\n            preamble,\n            loaded_skills: selected,\n        })\n    }\n}\n\n#[cfg(test)]\nmod managed_team_skill_routing_tests {\n    use super::*;\n\n    const A1_TASK: &str =\n        "Revisa únicamente el archivo TeamCreateModal.tsx y entrega un diagnóstico UX breve, \\\n         priorizando los problemas encontrados y proponiendo mejoras concretas. \\\n         No modifiques archivos. Solo lectura y análisis.";\n\n    const ROUTER: &str = r#"\nversion: 3\nlimits:\n  primary: 1\n  support: 2\n  normal_total: 5\n  hard_total: 7\nmodes:\n  design:\n    ux_audit:\n      primary: ux-heuristics\n      support: [refactoring-ui]\n    new_ui:\n      primary: frontend-design\n      support: [ui-ux-pro-max, web-typography, microinteractions]\n  debug:\n    default:\n      primary: debug-gate\n      support: [test-first-gate]\n  review:\n    implementation:\n      primary: ship-gate\n      support: [security-gate]\n  security:\n    default:\n      primary: security-gate\n      support: [prompt-injection-gate, ship-gate]\n  build:\n    interactive_3d:\n      primary: web-motion-toolkit\n      support: [web-artifact-builder, frontend-design]\n    interactive_html:\n      primary: web-artifact-builder\n      support: [frontend-design, test-first-gate]\ngates:\n  untrusted_content: prompt-injection-gate\n  public_demo_or_placeholder_brand: business-identity-gate\n  sensitive_surface: security-gate\n  behavior_change: test-first-gate\n  completion_claim: ship-gate\n"#;\n\n    fn frontend_allowlist() -> Vec<String> {\n        [\n            "skill-design",\n            "frontend-design",\n            "refactoring-ui",\n            "ui-ux-pro-max",\n            "ux-heuristics",\n            "web-typography",\n            "microinteractions",\n            "theme-factory",\n            "web-motion-toolkit",\n            "web-artifact-builder",\n            "generative-art",\n            "business-identity-gate",\n            "prompt-injection-gate",\n            "test-first-gate",\n            "security-gate",\n            "ship-gate",\n        ]\n        .into_iter()\n        .map(str::to_owned)\n        .collect()\n    }\n\n    fn write_skill(root: &Path, name: &str, marker: &str) -> SkillDirSpec {\n        let dir = root.join(name);\n        std::fs::create_dir_all(&dir).unwrap();\n        std::fs::write(\n            dir.join("SKILL.md"),\n            format!(\n                "---\\nname: {name}\\ndescription: test\\n---\\n{marker}\\n"\n            ),\n        )\n        .unwrap();\n\n        SkillDirSpec {\n            name: name.to_owned(),\n            path: dir.to_string_lossy().into_owned(),\n        }\n    }\n\n    fn write_router(tmp: &Path) -> PathBuf {\n        let path = tmp.join("router.yaml");\n        std::fs::write(&path, ROUTER).unwrap();\n        path\n    }\n\n    #[test]\n    fn spanish_a1_task_routes_to_ux_audit() {\n        let route =\n            route_managed_team_task(ROUTER, A1_TASK, &frontend_allowlist())\n                .unwrap();\n\n        assert_eq!(route.task_class, "ux_audit");\n        assert_eq!(route.route, "design.ux_audit");\n        assert_eq!(route.primary, "ux-heuristics");\n        assert_eq!(route.support, vec!["refactoring-ui"]);\n        assert!(route.gates.is_empty());\n    }\n\n    #[test]\n    fn primary_and_support_are_read_from_yaml_not_hardcoded_pair() {\n        let yaml = ROUTER\n            .replace("ux-heuristics", "yaml-primary")\n            .replace("refactoring-ui", "yaml-support");\n\n        let allowed = vec![\n            "skill-design".to_owned(),\n            "yaml-primary".to_owned(),\n            "yaml-support".to_owned(),\n        ];\n\n        let route =\n            route_managed_team_task(&yaml, A1_TASK, &allowed).unwrap();\n\n        assert_eq!(route.primary, "yaml-primary");\n        assert_eq!(route.support, vec!["yaml-support"]);\n    }\n\n    #[test]\n    fn support_never_exceeds_router_or_runtime_cap() {\n        let task = "Crear una nueva interfaz para el panel principal";\n\n        let route =\n            route_managed_team_task(ROUTER, task, &frontend_allowlist())\n                .unwrap();\n\n        assert_eq!(route.primary, "frontend-design");\n        assert_eq!(\n            route.support,\n            vec![\n                "ui-ux-pro-max".to_owned(),\n                "web-typography".to_owned()\n            ]\n        );\n        assert!(route.support.len() <= 2);\n    }\n\n    #[test]\n    fn primary_outside_allowlist_fails_closed() {\n        let allowed = vec![\n            "skill-design".to_owned(),\n            "refactoring-ui".to_owned(),\n        ];\n\n        let error =\n            route_managed_team_task(ROUTER, A1_TASK, &allowed).unwrap_err();\n\n        assert!(error.contains("outside role allowlist"));\n        assert!(error.contains("ux-heuristics"));\n    }\n\n    #[test]\n    fn mandatory_gate_outside_allowlist_fails_closed() {\n        let allowed = vec![\n            "skill-design".to_owned(),\n            "frontend-design".to_owned(),\n            "ui-ux-pro-max".to_owned(),\n            "web-typography".to_owned(),\n        ];\n\n        let error = route_managed_team_task(\n            ROUTER,\n            "Crear una nueva interfaz que modifica el comportamiento",\n            &allowed,\n        )\n        .unwrap_err();\n\n        assert!(error.contains("mandatory gate"));\n        assert!(error.contains("test-first-gate"));\n    }\n\n    #[test]\n    fn a1_read_only_language_does_not_add_behavior_change_gate() {\n        let route =\n            route_managed_team_task(ROUTER, A1_TASK, &frontend_allowlist())\n                .unwrap();\n\n        assert!(!route.gates.iter().any(|name| name == "test-first-gate"));\n    }\n\n    #[test]\n    fn conversation_without_bootstrap_marker_has_no_managed_routing_context() {\n        let tmp = tempfile::TempDir::new().unwrap();\n\n        let result = build_managed_team_routing_context(\n            Some("[Assistant Rules]\\nordinary\\n[/Assistant Rules]"),\n            &frontend_allowlist(),\n            &[],\n            &tmp.path().join("missing-router.yaml"),\n        )\n        .unwrap();\n\n        assert!(result.is_none());\n    }\n\n    #[tokio::test]\n    async fn selected_skill_without_resolved_source_fails_closed() {\n        let tmp = tempfile::TempDir::new().unwrap();\n        let root = tmp.path().join("skills");\n        std::fs::create_dir_all(&root).unwrap();\n\n        let dirs = vec![\n            write_skill(&root, "skill-design", "ROUTER_BOOTSTRAP_BODY"),\n        ];\n\n        let router_path = write_router(tmp.path());\n\n        let ctx = build_managed_team_routing_context(\n            Some(\n                "[Assistant Rules]\\n\\\n                 ## Bootstrapped Skill: skill-design\\n\\\n                 [/Assistant Rules]"\n            ),\n            &frontend_allowlist(),\n            &dirs,\n            &router_path,\n        )\n        .unwrap()\n        .unwrap();\n\n        let error = ctx.route_and_render(A1_TASK).await.unwrap_err();\n\n        assert!(error.contains("ux-heuristics"));\n        assert!(error.contains("no resolved skill source"));\n    }\n\n    #[tokio::test]\n    async fn selected_skill_bodies_are_rendered_into_managed_preamble() {\n        let tmp = tempfile::TempDir::new().unwrap();\n        let root = tmp.path().join("skills");\n        std::fs::create_dir_all(&root).unwrap();\n\n        let dirs = vec![\n            write_skill(&root, "skill-design", "ROUTER_BOOTSTRAP_BODY"),\n            write_skill(&root, "ux-heuristics", "UX_BODY_MARKER"),\n            write_skill(&root, "refactoring-ui", "REFACTOR_BODY_MARKER"),\n        ];\n\n        let router_path = write_router(tmp.path());\n\n        let ctx = build_managed_team_routing_context(\n            Some(\n                "[Assistant Rules]\\n\\\n                 ## Bootstrapped Skill: skill-design\\n\\\n                 [/Assistant Rules]"\n            ),\n            &frontend_allowlist(),\n            &dirs,\n            &router_path,\n        )\n        .unwrap()\n        .unwrap();\n\n        let routed = ctx.route_and_render(A1_TASK).await.unwrap();\n\n        assert_eq!(\n            routed.loaded_skills,\n            vec![\n                "ux-heuristics".to_owned(),\n                "refactoring-ui".to_owned()\n            ]\n        );\n\n        assert!(routed.preamble.contains("task_class=ux_audit"));\n        assert!(routed.preamble.contains("route=design.ux_audit"));\n        assert!(routed.preamble.contains("primary=ux-heuristics"));\n        assert!(routed.preamble.contains("supports=refactoring-ui"));\n        assert!(routed.preamble.contains("[Skill: ux-heuristics]"));\n        assert!(routed.preamble.contains("UX_BODY_MARKER"));\n        assert!(routed.preamble.contains("[Skill: refactoring-ui]"));\n        assert!(routed.preamble.contains("REFACTOR_BODY_MARKER"));\n        assert!(routed.preamble.ends_with("[/Managed Team Skill Routing]\\n"));\n    }\n}\n'
+    routing_file = root / "crates/aionui-ai-agent/src/managed_team_routing.rs"
+    if routing_file.exists():
+        fail("managed Team routing module already exists")
+    routing_file.write_text(routing_source, encoding="utf-8")
+
+    agent_lib_file = root / "crates/aionui-ai-agent/src/lib.rs"
+    ltext = agent_lib_file.read_text(encoding="utf-8")
+    ltext = replace_once(
+        ltext,
+        "pub mod manager;\n",
+        "pub mod manager;\npub(crate) mod managed_team_routing;\n",
+        "managed Team routing module registration",
+    )
+    agent_lib_file.write_text(ltext, encoding="utf-8")
+
+    agent_cargo_file = root / "crates/aionui-ai-agent/Cargo.toml"
+    ctext = agent_cargo_file.read_text(encoding="utf-8")
+    ctext = replace_once(
+        ctext,
+        "serde_json.workspace = true\n",
+        "serde_json.workspace = true\nserde_yaml.workspace = true\n",
+        "managed Team routing serde_yaml dependency",
+    )
+    agent_cargo_file.write_text(ctext, encoding="utf-8")
+
+    agent_lock_file = root / "Cargo.lock"
+    lock_text = agent_lock_file.read_text(encoding="utf-8")
+
+    package_marker = '[[package]]\nname = "aionui-ai-agent"\n'
+    package_start = lock_text.find(package_marker)
+    if package_start < 0:
+        fail("aionui-ai-agent package not found in Cargo.lock")
+
+    package_end = lock_text.find("\n[[package]]", package_start + len(package_marker))
+    if package_end < 0:
+        fail("aionui-ai-agent Cargo.lock package boundary not found")
+
+    package_text = lock_text[package_start:package_end]
+
+    if ' "serde_yaml",' in package_text:
+        fail("aionui-ai-agent Cargo.lock already contains serde_yaml")
+
+    package_text = replace_once(
+        package_text,
+        ' "serde_json",\n',
+        ' "serde_json",\n "serde_yaml",\n',
+        "aionui-ai-agent Cargo.lock serde_yaml dependency",
+    )
+
+    lock_text = (
+        lock_text[:package_start]
+        + package_text
+        + lock_text[package_end:]
+    )
+
+    agent_lock_file.write_text(lock_text, encoding="utf-8")
 
     print("Patched AionCore managed skills, direct-CLI injected delivery, and dynamic Team role modes.")
     return 0

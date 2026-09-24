@@ -79,6 +79,7 @@ RUN --mount=type=tmpfs,target=/tmp \
     cargo test --locked -p aionui-team managed_team_role_mode_tests; \
     cargo test --locked -p aionui-ai-agent managed_direct_cli_skill_delivery_tests; \
     cargo test --locked -p aionui-ai-agent managed_team_router_bootstrap_tests; \
+    cargo test --locked -p aionui-ai-agent managed_team_skill_routing_tests; \
     cargo test --locked -p aionui-db --test agent_skill_delivery_migration; \
     cargo build --locked --release -p aionui-app; \
     test -x /src/aioncore/target/release/aioncore; \
@@ -149,7 +150,16 @@ RUN --mount=type=secret,id=gh_token,required=true \
     test ! -e /opt/aionui-team-skills/bundle/design-taste-frontend; \
     test ! -e /opt/aionui-team-skills/bundle/webapp-testing; \
     mkdir -p "/opt/aionui-team-skills-versioned/$SKILL_DESIGN_COMMIT"; \
-    cp -a /opt/aionui-team-skills/bundle/. "/opt/aionui-team-skills-versioned/$SKILL_DESIGN_COMMIT/"
+    cp -a /opt/aionui-team-skills/bundle/. "/opt/aionui-team-skills-versioned/$SKILL_DESIGN_COMMIT/"; \
+    mkdir -p "/opt/aionui-team-policy-versioned/$SKILL_DESIGN_COMMIT"; \
+    install -m 0444 \
+      /opt/skill-design/agent/router.yaml \
+      "/opt/aionui-team-policy-versioned/$SKILL_DESIGN_COMMIT/router.yaml"; \
+    install -m 0444 \
+      /opt/skill-design/agent/skill-map.yaml \
+      "/opt/aionui-team-policy-versioned/$SKILL_DESIGN_COMMIT/skill-map.yaml"; \
+    test -s "/opt/aionui-team-policy-versioned/$SKILL_DESIGN_COMMIT/router.yaml"; \
+    test -s "/opt/aionui-team-policy-versioned/$SKILL_DESIGN_COMMIT/skill-map.yaml"
 
 COPY . .
 
@@ -221,6 +231,16 @@ COPY --from=builder /opt/aionui-web/ /app/
 # Versioned, audited role-skill bundle. It remains root-owned under /app and is
 # therefore immutable when the runtime container is launched with --read-only.
 COPY --from=builder /opt/aionui-team-skills-versioned/ /app/team-skills/
+
+# Immutable pinned Team routing policy from the same audited skill-design commit.
+# Runtime routing never consults the mutable workspace for policy.
+COPY --from=builder /opt/aionui-team-policy-versioned/ /app/team-skill-policy/
+
+ENV AIONUI_MANAGED_SKILL_ROUTER=/app/team-skill-policy/${SKILL_DESIGN_COMMIT}/router.yaml \
+    AIONUI_MANAGED_SKILL_MAP=/app/team-skill-policy/${SKILL_DESIGN_COMMIT}/skill-map.yaml
+
+RUN test -s "$AIONUI_MANAGED_SKILL_ROUTER" \
+    && test -s "$AIONUI_MANAGED_SKILL_MAP"
 
 # Claude QA capability wall. The hook and managed policy are baked outside HOME,
 # root-owned, and become immutable at runtime because production runs with a
