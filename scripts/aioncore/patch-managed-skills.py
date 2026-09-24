@@ -1226,6 +1226,226 @@ mod managed_direct_cli_skill_delivery_tests {
         fail("managed Team routing module already exists")
     routing_file.write_text(routing_source, encoding="utf-8")
 
+    # FIX-2C: Team wake payloads contain governance/role text before the actual
+    # task. Route only on semantic task content so words such as permission,
+    # secret, or password in Team Governance cannot create false security gates.
+    rtext = routing_file.read_text(encoding="utf-8")
+
+    task_scope_helper = r'''fn managed_routing_task_scope(content: &str) -> &str {
+    const NEW_MESSAGES: &str = "## New Messages\n\n";
+    const TASK_BOARD: &str = "## Current Task Board Summary";
+    const USER_MESSAGE: &str = "- From `user` [message]: ";
+
+    let Some(messages_marker) = content.find(NEW_MESSAGES) else {
+        return content;
+    };
+
+    let after_messages = &content[messages_marker + NEW_MESSAGES.len()..];
+    let task_board_start = after_messages.find(TASK_BOARD);
+    let messages = match task_board_start {
+        Some(index) => &after_messages[..index],
+        None => after_messages,
+    };
+
+    // Lead/direct-user turns: route only the latest real user message.
+    if let Some(user_start) = messages.rfind(USER_MESSAGE) {
+        let user_content = &messages[user_start + USER_MESSAGE.len()..];
+        let user_end = user_content
+            .find("\n- From `")
+            .unwrap_or(user_content.len());
+        let task = user_content[..user_end].trim();
+
+        if !task.is_empty() {
+            return task;
+        }
+    }
+
+    // Teammate/task wake-up fallback: classify the task-board payload while
+    // keeping Team Governance and role/tool instructions out of task intent.
+    if let Some(index) = task_board_start {
+        return after_messages[index..].trim();
+    }
+
+    // Non-standard Team payload: preserve fail-closed classification semantics
+    // but constrain the scope to the wake payload rather than governance.
+    messages.trim()
+}
+
+'''
+    rtext = replace_once(
+        rtext,
+        "fn classify_managed_task(content: &str) -> Result<ClassifiedRoute, String> {",
+        task_scope_helper
+        + "fn classify_managed_task(content: &str) -> Result<ClassifiedRoute, String> {",
+        "managed Team semantic routing scope helper",
+    )
+    rtext = replace_once(
+        rtext,
+        "    let classified = classify_managed_task(content)?;",
+        "    let task_content = managed_routing_task_scope(content);\n"
+        "    let classified = classify_managed_task(task_content)?;",
+        "managed Team semantic task classification",
+    )
+    rtext = replace_once(
+        rtext,
+        "    for condition in required_gate_conditions(content) {",
+        "    for condition in required_gate_conditions(task_content) {",
+        "managed Team semantic gate classification",
+    )
+
+    wrapper_tests_anchor = r'''    #[test]
+    fn primary_and_support_are_read_from_yaml_not_hardcoded_pair() {
+'''
+    wrapper_tests = r'''    #[test]
+    fn team_governance_does_not_add_false_sensitive_gate() {
+        let wrapped = format!(
+            "Team: \"a1\"\n\n\
+             ## Team Governance\n\
+             Follow permission and authorization rules. Never expose a secret or password.\n\n\
+             ## New Messages\n\n\
+             - From `user` [message]: {A1_TASK}\n\n\
+             ## Current Task Board Summary\n\n\
+             No tasks on the board.\n"
+        );
+
+        let route = route_managed_team_task(
+            ROUTER,
+            &wrapped,
+            &frontend_allowlist(),
+        )
+        .unwrap();
+
+        assert_eq!(route.task_class, "ux_audit");
+        assert_eq!(route.route, "design.ux_audit");
+        assert_eq!(route.primary, "ux-heuristics");
+        assert_eq!(route.support, vec!["refactoring-ui"]);
+        assert!(
+            route.gates.is_empty(),
+            "Team governance must not influence task gates: {:?}",
+            route.gates
+        );
+    }
+
+    #[test]
+    fn sensitive_user_message_still_adds_security_gate() {
+        let wrapped = format!(
+            "Team: \"a1\"\n\n\
+             ## Team Governance\n\
+             Follow permission rules.\n\n\
+             ## New Messages\n\n\
+             - From `user` [message]: {A1_TASK} Revisa también el campo password.\n\n\
+             ## Current Task Board Summary\n\n\
+             No tasks on the board.\n"
+        );
+
+        let route = route_managed_team_task(
+            ROUTER,
+            &wrapped,
+            &frontend_allowlist(),
+        )
+        .unwrap();
+
+        assert_eq!(route.task_class, "ux_audit");
+        assert_eq!(route.gates, vec!["security-gate".to_owned()]);
+    }
+
+'''
+    rtext = replace_once(
+        rtext,
+        wrapper_tests_anchor,
+        wrapper_tests + wrapper_tests_anchor,
+        "managed Team wrapper routing regression tests",
+    )
+    routing_file.write_text(rtext, encoding="utf-8")
+
+    # FIX-2D: surface the exact per-turn managed routing as a durable Info tip.
+    # StreamRelay already forwards and persists Info tips, so the UI can render
+    # the same routing metadata live and after reload without a new DB schema.
+    stext = session_agent_file.read_text(encoding="utf-8")
+    old_visibility_block = r'''        let mut content = self.build_prompt_blocks(&data).await;
+
+        if let Some(routed) = routed {
+            tracing::info!(
+                conversation_id = %self.conversation_id,
+                task_class = %routed.route.task_class,
+                route = %routed.route.route,
+                primary = %routed.route.primary,
+                supports = ?routed.route.support,
+                gates = ?routed.route.gates,
+                loaded_skills = ?routed.loaded_skills,
+                "managed skill routing"
+            );
+
+            content.insert(0, ContentBlock::Text(routed.preamble));
+        }
+'''
+    new_visibility_block = r'''        let mut content = self.build_prompt_blocks(&data).await;
+        let mut routing_tip: Option<TipsEventData> = None;
+
+        if let Some(routed) = routed {
+            tracing::info!(
+                conversation_id = %self.conversation_id,
+                task_class = %routed.route.task_class,
+                route = %routed.route.route,
+                primary = %routed.route.primary,
+                supports = ?routed.route.support,
+                gates = ?routed.route.gates,
+                loaded_skills = ?routed.loaded_skills,
+                "managed skill routing"
+            );
+
+            routing_tip = Some(TipsEventData {
+                content: format!(
+                    "Skills used: {}",
+                    routed.loaded_skills.join(", ")
+                ),
+                tip_type: TipType::Info,
+                code: Some("MANAGED_SKILL_ROUTING".to_owned()),
+                params: Some(serde_json::json!({
+                    "task_class": routed.route.task_class.clone(),
+                    "route": routed.route.route.clone(),
+                    "primary": routed.route.primary.clone(),
+                    "supports": routed.route.support.clone(),
+                    "gates": routed.route.gates.clone(),
+                    "loaded_skills": routed.loaded_skills.clone(),
+                })),
+                supersedes_key: Some(format!(
+                    "managed-skill-routing:{}",
+                    data.msg_id
+                )),
+            });
+
+            content.insert(0, ContentBlock::Text(routed.preamble));
+        }
+'''
+    stext = replace_once(
+        stext,
+        old_visibility_block,
+        new_visibility_block,
+        "managed Team routing visibility tip construction",
+    )
+
+    old_start_event = r'''        let _ = self.runtime.tx.send(AgentStreamEvent::Start(StartEventData {
+            session_id: self.runtime.session_id(),
+        }));
+        self.runtime.set_status(ConversationStatus::Running);
+'''
+    new_start_event = r'''        let _ = self.runtime.tx.send(AgentStreamEvent::Start(StartEventData {
+            session_id: self.runtime.session_id(),
+        }));
+        if let Some(routing_tip) = routing_tip {
+            let _ = self.runtime.tx.send(AgentStreamEvent::Tips(routing_tip));
+        }
+        self.runtime.set_status(ConversationStatus::Running);
+'''
+    stext = replace_once(
+        stext,
+        old_start_event,
+        new_start_event,
+        "managed Team routing visibility tip emission",
+    )
+    session_agent_file.write_text(stext, encoding="utf-8")
+
     agent_lib_file = root / "crates/aionui-ai-agent/src/lib.rs"
     ltext = agent_lib_file.read_text(encoding="utf-8")
     ltext = replace_once(
