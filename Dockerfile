@@ -75,6 +75,7 @@ RUN --mount=type=tmpfs,target=/tmp \
     rm /tmp/.aionui-build-write-test; \
     python3 -m py_compile /opt/aionui-build/patch-managed-skills.py; \
     python3 /opt/aionui-build/patch-managed-skills.py /src/aioncore; \
+    cargo check --locked -p aionui-app; \
     cargo test --locked -p aionui-extension managed_skill_security_tests; \
     cargo test --locked -p aionui-team managed_team_role_mode_tests; \
     cargo test --locked -p aionui-ai-agent managed_direct_cli_skill_delivery_tests; \
