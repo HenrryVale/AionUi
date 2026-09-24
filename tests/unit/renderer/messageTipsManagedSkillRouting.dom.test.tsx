@@ -45,7 +45,7 @@ const buildRoutingTip = (params: Record<string, unknown>): IMessageTips =>
     status: 'finish',
     content: {
       type: 'info',
-      content: 'Skills used: ux-heuristics, refactoring-ui',
+      content: 'Loaded skills: ux-heuristics, refactoring-ui',
       code: 'MANAGED_SKILL_ROUTING',
       params,
     },
@@ -114,6 +114,6 @@ describe('MessageTips — managed skill routing visibility', () => {
     );
 
     expect(screen.queryByTestId('managed-skill-routing')).not.toBeInTheDocument();
-    expect(screen.getByText('Skills used: ux-heuristics, refactoring-ui')).toBeInTheDocument();
+    expect(screen.getByText('Loaded skills: ux-heuristics, refactoring-ui')).toBeInTheDocument();
   });
 });
