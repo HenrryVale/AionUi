@@ -1492,6 +1492,39 @@ mod managed_direct_cli_skill_delivery_tests {
     )
     conversation_service_file.write_text(conversation_service, encoding="utf-8")
 
+    conversation_service_test_file = root / "crates/aionui-conversation/src/service_test.rs"
+    conversation_service_test = conversation_service_test_file.read_text(encoding="utf-8")
+    conversation_turn_literal_pattern = re.compile(
+        r"(ConversationAgentTurnRequest \{\n"
+        r"(?:[^\n]*\n){0,8}?"
+        r"(?P<indent>\s*)content: [^\n]+,\n)"
+        r"(?P=indent)files:"
+    )
+
+    def add_none_conversation_routing_content(match):
+        indent = match.group("indent")
+        return (
+            match.group(1)
+            + f"{indent}routing_content: None,\n"
+            + f"{indent}files:"
+        )
+
+    conversation_service_test, conversation_turn_literal_count = (
+        conversation_turn_literal_pattern.subn(
+            add_none_conversation_routing_content,
+            conversation_service_test,
+        )
+    )
+    if conversation_turn_literal_count != 4:
+        fail(
+            "Conversation service test routing_content migration: "
+            f"expected 4 literals, found {conversation_turn_literal_count}"
+        )
+    conversation_service_test_file.write_text(
+        conversation_service_test,
+        encoding="utf-8",
+    )
+
     turn_file = root / "crates/aionui-conversation/src/turn_orchestrator.rs"
     turn = turn_file.read_text(encoding="utf-8")
     turn = replace_once(
@@ -1860,37 +1893,50 @@ mod managed_direct_cli_skill_delivery_tests {
         field_name: str,
         expected_literals: int,
     ) -> None:
-        needle = f"{type_name} {{"
+        # Exact Rust identifier boundary: "AgentTurnRequest {" must NOT match
+        # the suffix of "ConversationAgentTurnRequest {".
+        literal_pattern = re.compile(
+            rf"(?<![A-Za-z0-9_]){re.escape(type_name)}\s*\{{"
+        )
+        struct_definition_pattern = re.compile(
+            rf"\bstruct\s+{re.escape(type_name)}\s*\{{"
+        )
+
         checked = 0
         missing = []
+        locations = []
 
         for rust_file in sorted((root / "crates").rglob("*.rs")):
             source_lines = rust_file.read_text(encoding="utf-8").splitlines()
 
             for index, line in enumerate(source_lines):
-                if needle not in line:
+                if not literal_pattern.search(line):
                     continue
 
                 stripped = line.strip()
                 if (
-                    f"struct {type_name} {{" in stripped
+                    struct_definition_pattern.search(stripped)
                     or stripped.startswith("impl ")
                 ):
                     continue
 
                 checked += 1
+                location = f"{rust_file.relative_to(root)}:{index + 1}"
+                locations.append(location)
                 window = "\n".join(source_lines[index:index + 24])
 
-                # Rust struct-update syntax inherits routing_content from the
+                # Rust struct-update syntax inherits the new field from the
                 # source value, so an explicit field is not required there.
-                has_struct_update = bool(re.search(r"(?m)^\s*\.\.[A-Za-z_]", window))
+                has_struct_update = bool(
+                    re.search(r"(?m)^\s*\.\.[A-Za-z_]", window)
+                )
                 if f"{field_name}:" not in window and not has_struct_update:
-                    missing.append(f"{rust_file.relative_to(root)}:{index + 1}")
+                    missing.append(location)
 
         if checked != expected_literals:
             fail(
                 f"{type_name} literal audit: expected {expected_literals}, "
-                f"found {checked}"
+                f"found {checked}; locations=" + ", ".join(locations)
             )
         if missing:
             fail(
@@ -1906,7 +1952,7 @@ mod managed_direct_cli_skill_delivery_tests {
     validate_struct_field_literals(
         "ConversationAgentTurnRequest",
         "routing_content",
-        3,
+        7,
     )
     validate_struct_field_literals(
         "AgentTurnRequest",
@@ -1926,7 +1972,7 @@ mod managed_direct_cli_skill_delivery_tests {
 
     print(
         "PASS: exhaustive FIX-2C struct literal audit "
-        "(SendMessageData=19, ConversationAgentTurnRequest=3, "
+        "(SendMessageData=19, ConversationAgentTurnRequest=7, "
         "AgentTurnRequest=1, WakeInput=1, TurnStartInput=2)."
     )
     print("Patched AionCore managed skills, direct-CLI injected delivery, and dynamic Team role modes.")
