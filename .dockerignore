@@ -31,6 +31,7 @@ tests
 # into an excluded directory when evaluating a child negation.
 !tests/
 tests/*
+!tests/vitest.dom.setup.ts
 !tests/unit/
 tests/unit/*
 !tests/unit/renderer/
