@@ -1134,10 +1134,10 @@ mod managed_direct_cli_skill_delivery_tests {
         // Managed Team routing runs before any model turn begins. The original
         // user payload is left byte-for-byte untouched; the selected managed
         // skill bodies become a leading text block in Command::Send.
-        let routed = match self.managed_team_routing.as_ref() {
-            Some(routing) => Some(
+        let routed = match (self.managed_team_routing.as_ref(), data.routing_content.as_deref()) {
+            (Some(routing), Some(routing_content)) => Some(
                 routing
-                    .route_and_render(data.routing_content.as_deref().unwrap_or(&data.content))
+                    .route_and_render(routing_content)
                     .await
                     .map_err(|error| {
                         AgentSendError::from_agent_error(AgentError::internal(
@@ -1145,7 +1145,10 @@ mod managed_direct_cli_skill_delivery_tests {
                         ))
                     })?,
             ),
-            None => None,
+            // Team native slash commands intentionally carry no routing_content:
+            // keep command dispatch byte-identical and inject no managed task skills.
+            (Some(_), None) => None,
+            (None, _) => None,
         };
 
         let mut content = self.build_prompt_blocks(&data).await;
@@ -1330,39 +1333,54 @@ mod managed_direct_cli_skill_delivery_tests {
         "    /// Unread mailbox rows used to build `first_message`. Returned so the\n",
         "    pub first_message: String,\n"
         "    /// Structured semantic task content for managed skill routing.\n"
-        "    pub routing_content: String,\n"
+        "    /// None is reserved for native slash commands, which bypass task routing.\n"
+        "    pub routing_content: Option<String>,\n"
         "    /// Unread mailbox rows used to build `first_message`. Returned so the\n",
         "WakeInput semantic routing field",
     )
     routing_content_anchor = r'''                let (first_message, needs_role_prompt) = if batch.is_command {
 '''
-    routing_content_block = r'''                let routing_content = claimed_unread
-                    .iter()
-                    .rev()
-                    .find(|message| {
-                        message.msg_type == MailboxMessageType::Message
-                            && !message.content.trim().is_empty()
-                    })
-                    .map(|message| message.content.clone())
-                    .or_else(|| {
-                        tasks
+    routing_content_block = r'''                let routing_content = if batch.is_command {
+                    // Native slash commands intentionally bypass managed task
+                    // routing. Their content must stay byte-identical for the
+                    // backend command dispatcher.
+                    None
+                } else {
+                    Some(
+                        claimed_unread
                             .iter()
-                            .filter(|task| task.owner.as_deref() == Some(slot_id))
-                            .filter(|task| matches!(task.status, TaskStatus::Pending | TaskStatus::InProgress))
-                            .max_by_key(|task| task.updated_at)
-                            .map(|task| {
-                                let description = task
-                                    .description
-                                    .as_deref()
-                                    .map(str::trim)
-                                    .filter(|description| !description.is_empty());
-                                match description {
-                                    Some(description) => format!("{}\n{}", task.subject, description),
-                                    None => task.subject.clone(),
-                                }
+                            .rev()
+                            .find(|message| {
+                                message.msg_type == MailboxMessageType::Message
+                                    && !message.content.trim().is_empty()
                             })
-                    })
-                    .unwrap_or_default();
+                            .map(|message| message.content.clone())
+                            .or_else(|| {
+                                tasks
+                                    .iter()
+                                    .filter(|task| task.owner.as_deref() == Some(slot_id))
+                                    .filter(|task| {
+                                        matches!(task.status, TaskStatus::Pending | TaskStatus::InProgress)
+                                    })
+                                    .max_by_key(|task| task.updated_at)
+                                    .map(|task| {
+                                        let description = task
+                                            .description
+                                            .as_deref()
+                                            .map(str::trim)
+                                            .filter(|description| !description.is_empty());
+                                        match description {
+                                            Some(description) => format!("{}\n{}", task.subject, description),
+                                            None => task.subject.clone(),
+                                        }
+                                    })
+                            })
+                            // Some("") is deliberate for a non-command Team
+                            // turn with no routable task: managed routing then
+                            // fails closed instead of inspecting Governance.
+                            .unwrap_or_default(),
+                    )
+                };
 
 '''
     team_session = replace_once(
@@ -1392,7 +1410,7 @@ mod managed_direct_cli_skill_delivery_tests {
         "    pub files: Vec<String>,\n"
         "    pub source: AgentTurnSource,\n",
         "    pub content: String,\n"
-        "    pub routing_content: String,\n"
+        "    pub routing_content: Option<String>,\n"
         "    pub files: Vec<String>,\n"
         "    pub source: AgentTurnSource,\n",
         "AgentTurnRequest semantic routing field",
@@ -1419,7 +1437,7 @@ mod managed_direct_cli_skill_delivery_tests {
         "                    content: request.content.clone(),\n"
         "                    files: request.files.clone(),\n",
         "                    content: request.content.clone(),\n"
-        "                    routing_content: Some(request.routing_content.clone()),\n"
+        "                    routing_content: request.routing_content.clone(),\n"
         "                    files: request.files.clone(),\n",
         "Team conversation adapter semantic routing propagation",
     )
@@ -1579,7 +1597,7 @@ mod managed_direct_cli_skill_delivery_tests {
         team_integration,
         "    assert!(first_message.contains(\"do X\"));\n",
         "    assert!(first_message.contains(\"do X\"));\n"
-        "    assert_eq!(worker_request.routing_content, \"do X\");\n",
+        "    assert_eq!(worker_request.routing_content.as_deref(), Some(\"do X\"));\n",
         "teammate semantic routing integration assertion",
     )
     team_integration_file.write_text(team_integration, encoding="utf-8")
@@ -1592,7 +1610,7 @@ mod managed_direct_cli_skill_delivery_tests {
         "    assert!(request.content.contains(\"user input to team\"));\n",
         "    assert_eq!(request.user_id, \"user-e2e\");\n"
         "    assert!(request.content.contains(\"user input to team\"));\n"
-        "    assert_eq!(request.routing_content, \"user input to team\");\n",
+        "    assert_eq!(request.routing_content.as_deref(), Some(\"user input to team\"));\n",
         "lead semantic routing integration assertion",
     )
     team_e2e_file.write_text(team_e2e, encoding="utf-8")
