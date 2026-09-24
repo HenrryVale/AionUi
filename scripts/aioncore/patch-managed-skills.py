@@ -1396,7 +1396,7 @@ mod managed_direct_cli_skill_delivery_tests {
 
             routing_tip = Some(TipsEventData {
                 content: format!(
-                    "Skills used: {}",
+                    "Loaded skills: {}",
                     routed.loaded_skills.join(", ")
                 ),
                 tip_type: TipType::Info,
@@ -1433,10 +1433,10 @@ mod managed_direct_cli_skill_delivery_tests {
     new_start_event = r'''        let _ = self.runtime.tx.send(AgentStreamEvent::Start(StartEventData {
             session_id: self.runtime.session_id(),
         }));
+        self.runtime.set_status(ConversationStatus::Running);
         if let Some(routing_tip) = routing_tip {
             let _ = self.runtime.tx.send(AgentStreamEvent::Tips(routing_tip));
         }
-        self.runtime.set_status(ConversationStatus::Running);
 '''
     stext = replace_once(
         stext,
