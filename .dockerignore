@@ -26,6 +26,16 @@ docs
 examples
 mobile
 tests
+# Keep one focused DOM regression in the image-build context. The parent
+# directories must be re-included explicitly because Docker does not descend
+# into an excluded directory when evaluating a child negation.
+!tests/
+tests/*
+!tests/unit/
+tests/unit/*
+!tests/unit/renderer/
+tests/unit/renderer/*
+!tests/unit/renderer/messageTipsManagedSkillRouting.dom.test.tsx
 homebrew
 .specify
 .claude
