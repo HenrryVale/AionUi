@@ -1613,6 +1613,60 @@ mod managed_direct_cli_skill_delivery_tests {
         "    assert_eq!(request.routing_content.as_deref(), Some(\"user input to team\"));\n",
         "lead semantic routing integration assertion",
     )
+    command_member_anchor = r'''    assert!(!content.contains("## New Messages"), "command turn must NOT be wrapped");
+
+    session.stop();
+'''
+    command_member_replacement = r'''    assert!(!content.contains("## New Messages"), "command turn must NOT be wrapped");
+    {
+        let requests = turn_requests.lock().unwrap();
+        let request = requests
+            .iter()
+            .rev()
+            .find(|request| request.slot_id == "worker-1")
+            .expect("worker command turn request");
+        assert!(
+            request.routing_content.is_none(),
+            "native slash commands must bypass managed task routing"
+        );
+    }
+
+    session.stop();
+'''
+    team_e2e = replace_once(
+        team_e2e,
+        command_member_anchor,
+        command_member_replacement,
+        "member native slash routing bypass assertion",
+    )
+    command_lead_anchor = r'''    assert_eq!(content, "/compact");
+    assert!(!content.contains("## New Messages"));
+
+    session.stop();
+'''
+    command_lead_replacement = r'''    assert_eq!(content, "/compact");
+    assert!(!content.contains("## New Messages"));
+    {
+        let requests = turn_requests.lock().unwrap();
+        let request = requests
+            .iter()
+            .rev()
+            .find(|request| request.slot_id == "lead-1")
+            .expect("lead command turn request");
+        assert!(
+            request.routing_content.is_none(),
+            "native slash commands must bypass managed task routing"
+        );
+    }
+
+    session.stop();
+'''
+    team_e2e = replace_once(
+        team_e2e,
+        command_lead_anchor,
+        command_lead_replacement,
+        "lead native slash routing bypass assertion",
+    )
     team_e2e_file.write_text(team_e2e, encoding="utf-8")
 
 
