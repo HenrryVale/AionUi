@@ -150,7 +150,7 @@ The Docker build runs:
   `messageTipsManagedSkillRouting.dom.test.tsx`.
 - The normal renderer build and managed AionCore release build.
 
-A1 remains pending until the rebuilt image passes the runtime canary.
+A1 passed the rebuilt runtime canary: exact Frontend identity, 16/16/16 skill view, exact managed 16-skill surface, no auto-skill leaks, `design.ux_audit` with `ux-heuristics` + `refactoring-ui`, `gates=[]`, visible `Loaded Skills (2)`, and an unchanged workspace.
 
 
 ## A2 Backend discovery
@@ -191,3 +191,5 @@ route to `debug.default`, load `debug-gate` plus
 The image build also runs the Team role provisioning unit test so the
 machine-readable marker cannot silently disappear while the renderer routing
 card test continues to pass.
+
+A2 Backend remains pending until the marker-based routing change is rebuilt and proven in a fresh runtime canary. The power-loss interrupted runtime log collection; the repository-level activation defect is independently demonstrated by source inspection and regression coverage, but the fix is not yet claimed as runtime PASS.
