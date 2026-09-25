@@ -31,9 +31,11 @@ tests
 # into an excluded directory when evaluating a child negation.
 !tests/
 tests/*
+!tests/vitest.setup.ts
 !tests/vitest.dom.setup.ts
 !tests/unit/
 tests/unit/*
+!tests/unit/teamRoleProfiles.test.ts
 !tests/unit/renderer/
 tests/unit/renderer/*
 !tests/unit/renderer/messageTipsManagedSkillRouting.dom.test.tsx
