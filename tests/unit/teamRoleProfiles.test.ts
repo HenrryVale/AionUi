@@ -9,6 +9,7 @@ import {
   resolveTeamRoleDisabledAutoInjectSkills,
   resolveTeamRoleSkills,
   teamRoleAssistantId,
+  MANAGED_TEAM_ROLE_ROUTING_MARKER,
   TEAM_ROLE_PROFILES,
 } from '@/renderer/pages/team/components/memberPicker/teamRoleProfiles';
 import {
@@ -283,6 +284,10 @@ const shipGate = managedSkills.find((skill) => skill.name === 'ship-gate')!;
 describe('team role profiles', () => {
   it('uses deterministic reusable assistant ids', () => {
     expect(teamRoleAssistantId('bare:claude', 'qa')).toBe('team-role:bare:claude:qa');
+  });
+
+  it('persists a machine-readable marker for managed role routing', () => {
+    expect(MANAGED_TEAM_ROLE_ROUTING_MARKER).toBe('[Managed Team Role Routing v1]');
   });
 
   it('assigns execution policy by responsibility', () => {
@@ -705,7 +710,7 @@ describe('team role profiles', () => {
     );
     expect(writeAssistantRule).toHaveBeenCalledWith(
       'team-role:bare:claude:qa',
-      TEAM_ROLE_PROFILES.qa.rules
+      `${MANAGED_TEAM_ROLE_ROUTING_MARKER}\n${TEAM_ROLE_PROFILES.qa.rules}`
     );
   });
 
