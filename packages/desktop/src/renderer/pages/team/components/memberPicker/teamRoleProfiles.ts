@@ -18,6 +18,8 @@ export type { ProvisionableTeamMemberSpecialty } from './teamRoleSkillPolicy';
 
 export type TeamRolePermissionMode = 'plan' | 'bypassPermissions';
 
+export const MANAGED_TEAM_ROLE_ROUTING_MARKER = '[Managed Team Role Routing v1]';
+
 type TeamRoleProfile = {
   label: string;
   description: string;
@@ -427,7 +429,10 @@ export async function provisionTeamRoleAssistant(
     });
   }
 
-  await deps.writeAssistantRule(roleAssistantId, profile.rules);
+  await deps.writeAssistantRule(
+    roleAssistantId,
+    `${MANAGED_TEAM_ROLE_ROUTING_MARKER}\n${profile.rules}`
+  );
   if (!roleAssistant.enabled) {
     await deps.setAssistantState(roleAssistantId, true);
     roleAssistant = { ...roleAssistant, enabled: true };
