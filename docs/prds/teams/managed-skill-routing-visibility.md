@@ -151,3 +151,43 @@ The Docker build runs:
 - The normal renderer build and managed AionCore release build.
 
 A1 remains pending until the rebuilt image passes the runtime canary.
+
+
+## A2 Backend discovery
+
+A1 originally validated only the Frontend role. Runtime testing of the next role
+exposed a role-activation gap: Backend completed a task but emitted no
+`MANAGED_SKILL_ROUTING` card.
+
+Repository inspection showed that managed routing activation was accidentally
+coupled to the role having `skill-design` in its allowlist:
+
+- the direct-CLI bootstrap ran only when `config.skills` contained
+  `skill-design`;
+- the routing context then required the bootstrap marker and a resolved
+  `skill-design` source;
+- Frontend and Full Stack include `skill-design`, but Backend, QA, Security,
+  Reviewer, Architect, PM and DevOps deliberately do not.
+
+Therefore the behavior was systemic rather than Backend-specific: those roles
+could receive their fixed skill catalog yet never create the deterministic
+per-turn routing context or the Loaded Skills card.
+
+The fix keeps the exact role catalogs unchanged. `skill-design` remains a
+Frontend/Full Stack capability rather than being added to every role. Managed
+role assistants now persist a machine-readable
+`[Managed Team Role Routing v1]` rule marker. AionCore activates deterministic
+routing from that marker and derives the managed bundle root from the role's
+resolved skill sources, while still enforcing the role allowlist. Frontend may
+continue to receive the full `skill-design` bootstrap body, but routing no
+longer depends on that capability being present.
+
+A regression test covers a Backend allowlist with only
+`debug-gate`, `test-first-gate`, `security-gate`,
+`prompt-injection-gate` and `ship-gate`. The A2 read-only debug task must
+route to `debug.default`, load `debug-gate` plus
+`test-first-gate`, add no gate, and contain no `skill-design` body.
+
+The image build also runs the Team role provisioning unit test so the
+machine-readable marker cannot silently disappear while the renderer routing
+card test continues to pass.
