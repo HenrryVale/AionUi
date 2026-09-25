@@ -173,8 +173,10 @@ RUN cmp \
     /app/packages/desktop/src/renderer/pages/team/components/memberPicker/teamRoleSkillPolicy.snapshot.json \
     /opt/skill-design/pack/aionui-team-roles.json
 
-# Per-turn managed skill routing is user-visible; keep its renderer/parser under
-# the same reproducible image-build gate as the managed AionCore routing tests.
+# Managed role routing has both a role-provisioning marker and a per-turn UI
+# surface. Gate both in the reproducible image build so non-frontend roles cannot
+# silently lose routing again while the renderer card still passes.
+RUN bunx vitest run --project node tests/unit/teamRoleProfiles.test.ts
 RUN bunx vitest run --project dom tests/unit/renderer/messageTipsManagedSkillRouting.dom.test.tsx
 
 # Renderer SPA → out/renderer (consumed by pack-web-cli.js as static/).
