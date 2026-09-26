@@ -20,9 +20,7 @@ import useSWR from 'swr';
 import { revalidateAcpConfigOptions } from '@/renderer/hooks/agent/useAcpConfigOptions';
 import { getConversationOrNull } from '@/renderer/pages/conversation/utils/conversationCache';
 import { removeTeamAssistantWithCronCleanup } from '../utils/removeTeamAssistantWithCronCleanup';
-import {
-  ensureTeamRoleAssistant,
-} from '../components/memberPicker/teamRoleProfiles';
+import { ensureTeamRoleAssistant } from '../components/memberPicker/teamRoleProfiles';
 import { enforceTeamRolePermissionModeForMember } from '../components/memberPicker/teamRolePermissions';
 import { addTeamAssistantWithRolePolicy } from '../components/memberPicker/teamRoleMemberLifecycle';
 import {
