@@ -186,9 +186,9 @@ describe('team role permission enforcement', () => {
       getConfigOptions: vi.fn(async () => unsupported),
     });
 
-    await expect(
-      enforceTeamRolePermissionModesWithDeps(team, [qaAssignment], d)
-    ).rejects.toThrow('Required permission mode "plan" is unavailable');
+    await expect(enforceTeamRolePermissionModesWithDeps(team, [qaAssignment], d)).rejects.toThrow(
+      'Required permission mode "plan" is unavailable'
+    );
 
     expect(d.setConfigOption).not.toHaveBeenCalled();
   });
@@ -197,11 +197,7 @@ describe('team role permission enforcement', () => {
     const d = deps();
 
     await expect(
-      enforceTeamRolePermissionModesWithDeps(
-        team,
-        [{ ...qaAssignment, assistantName: 'Claude QA Missing' }],
-        d
-      )
+      enforceTeamRolePermissionModesWithDeps(team, [{ ...qaAssignment, assistantName: 'Claude QA Missing' }], d)
     ).rejects.toThrow('Role member not found');
 
     expect(d.seedConversationMode).not.toHaveBeenCalled();
@@ -304,9 +300,7 @@ describe('team role permission enforcement', () => {
       ensureSession,
     });
 
-    await expect(
-      enforceTeamRolePermissionModesWithDeps(team, [qaAssignment], d)
-    ).rejects.toThrow('seed failed');
+    await expect(enforceTeamRolePermissionModesWithDeps(team, [qaAssignment], d)).rejects.toThrow('seed failed');
 
     expect(ensureSession).not.toHaveBeenCalled();
   });

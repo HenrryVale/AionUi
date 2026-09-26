@@ -141,8 +141,7 @@ export function useTeamSession(team: TTeam, warmupPhase?: TeamWarmupPhase) {
             assistant: resolvedAssistant,
           }),
         enforceRoleMode: enforceTeamRolePermissionModeForMember,
-        resolveRoleModel: (assistantId) =>
-          resolveDefaultTeamAgentModel({ assistant_id: assistantId }),
+        resolveRoleModel: (assistantId) => resolveDefaultTeamAgentModel({ assistant_id: assistantId }),
         removeAgent: (slotId) =>
           ipcBridge.team.removeAgent.invoke({
             team_id: team.id,

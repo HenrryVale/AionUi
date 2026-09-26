@@ -74,9 +74,7 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
   };
 
   const handleSelectAssistant = (assistant: TeamAssistantOption) => {
-    const existingNames = selectedMembers.map((member) =>
-      composeTeamMemberName(member.memberName, member.specialty)
-    );
+    const existingNames = selectedMembers.map((member) => composeTeamMemberName(member.memberName, member.specialty));
     const draft: TeamMemberDraft = {
       selectionId: `${assistant.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       assistant,
@@ -120,9 +118,7 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
     }
 
     const unsupportedManagedRole = selectedMembers.find(
-      (member) =>
-        member.specialty !== 'general' &&
-        !supportsManagedTeamRoleBackend(member.assistant.backend)
+      (member) => member.specialty !== 'general' && !supportsManagedTeamRoleBackend(member.assistant.backend)
     );
     if (unsupportedManagedRole) {
       Message.warning(
@@ -133,13 +129,9 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
       return;
     }
 
-    const memberNames = selectedMembers.map((member) =>
-      composeTeamMemberName(member.memberName, member.specialty)
-    );
+    const memberNames = selectedMembers.map((member) => composeTeamMemberName(member.memberName, member.specialty));
     if (memberNames.some((memberName) => !memberName.trim())) {
-      Message.warning(
-        t('team.create.memberNameRequired', { defaultValue: 'Every team member needs a name.' })
-      );
+      Message.warning(t('team.create.memberNameRequired', { defaultValue: 'Every team member needs a name.' }));
       return;
     }
     const duplicateNames = duplicateTeamMemberNames(memberNames);

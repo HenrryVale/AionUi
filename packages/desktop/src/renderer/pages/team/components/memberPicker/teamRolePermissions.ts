@@ -37,8 +37,7 @@ const liveDeps: TeamRolePermissionDeps = {
       merge_extra: true,
     }),
   ensureSession: (teamId) => ipcBridge.team.ensureSession.invoke({ team_id: teamId }),
-  attachAgent: (teamId, slotId) =>
-    ipcBridge.team.attachAgent.invoke({ team_id: teamId, slot_id: slotId }),
+  attachAgent: (teamId, slotId) => ipcBridge.team.attachAgent.invoke({ team_id: teamId, slot_id: slotId }),
   getConfigOptions: (teamId, conversationId) =>
     ipcBridge.team.getConfigOptions.invoke({ team_id: teamId, conversation_id: conversationId }),
   setConfigOption: (teamId, conversationId, optionId, value) =>
@@ -52,9 +51,7 @@ const liveDeps: TeamRolePermissionDeps = {
 };
 
 function resolveModeOption(response: GetConfigOptionsResponse) {
-  return response.config_options.find(
-    (option) => option.category === 'mode' || option.id === 'mode'
-  );
+  return response.config_options.find((option) => option.category === 'mode' || option.id === 'mode');
 }
 
 function errorText(error: unknown): string {
@@ -80,9 +77,7 @@ async function waitForRuntimeConfigOptions(
     }
   }
 
-  throw new Error(
-    `Role runtime did not become ready for ${memberName}: ${errorText(lastError)}`
-  );
+  throw new Error(`Role runtime did not become ready for ${memberName}: ${errorText(lastError)}`);
 }
 
 /**
@@ -112,8 +107,7 @@ export async function enforceTeamRolePermissionModesWithDeps(
   const resolved = assignments.map((assignment) => {
     const member = team.assistants.find(
       (assistant) =>
-        assistant.assistant_id === assignment.assistantId &&
-        assistant.assistant_name === assignment.assistantName
+        assistant.assistant_id === assignment.assistantId && assistant.assistant_name === assignment.assistantName
     );
     if (!member) {
       throw new Error(
@@ -139,32 +133,18 @@ export async function enforceTeamRolePermissionModesWithDeps(
       await deps.attachAgent(team.id, member.slot_id);
     }
 
-    const options = await waitForRuntimeConfigOptions(
-      team.id,
-      member.conversation_id,
-      assignment.assistantName,
-      deps
-    );
+    const options = await waitForRuntimeConfigOptions(team.id, member.conversation_id, assignment.assistantName, deps);
     const modeOption = resolveModeOption(options);
     if (!modeOption) {
-      throw new Error(
-        `Permission mode option is unavailable for role member: ${assignment.assistantName}`
-      );
+      throw new Error(`Permission mode option is unavailable for role member: ${assignment.assistantName}`);
     }
 
     const availableModes = new Set(modeOption.options.map((option) => option.value));
     if (!availableModes.has(assignment.mode)) {
-      throw new Error(
-        `Required permission mode "${assignment.mode}" is unavailable for ${assignment.assistantName}`
-      );
+      throw new Error(`Required permission mode "${assignment.mode}" is unavailable for ${assignment.assistantName}`);
     }
 
-    await deps.setConfigOption(
-      team.id,
-      member.conversation_id,
-      modeOption.id,
-      assignment.mode
-    );
+    await deps.setConfigOption(team.id, member.conversation_id, modeOption.id, assignment.mode);
 
     // The eager Team attach writes the backend full-auto seed before the live
     // switch. Restore the intended persisted seed so diagnostics and any

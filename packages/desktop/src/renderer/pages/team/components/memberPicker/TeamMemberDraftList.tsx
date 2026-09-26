@@ -3,11 +3,7 @@ import { Button, Input, Select } from '@arco-design/web-react';
 import { CloseSmall, Crown } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
 import { AssistantOptionLabel, type TeamAssistantOption } from '../assistantSelectUtils';
-import {
-  composeTeamMemberName,
-  TEAM_MEMBER_SPECIALTIES,
-  type TeamMemberSpecialty,
-} from './teamMemberIdentity';
+import { composeTeamMemberName, TEAM_MEMBER_SPECIALTIES, type TeamMemberSpecialty } from './teamMemberIdentity';
 import { supportsManagedTeamRoleBackend } from './teamRoleProfiles';
 
 export type TeamMemberDraft = {
@@ -22,10 +18,7 @@ type Props = {
   leaderSelectionId?: string;
   onLeaderChange: (selectionId: string) => void;
   onRemove: (selectionId: string) => void;
-  onUpdate: (
-    selectionId: string,
-    patch: Partial<Pick<TeamMemberDraft, 'memberName' | 'specialty'>>
-  ) => void;
+  onUpdate: (selectionId: string, patch: Partial<Pick<TeamMemberDraft, 'memberName' | 'specialty'>>) => void;
   /**
    * 可选的标题行操作区，渲染在“已选成员 N”标题右侧、替换默认的 Leader 图例。
    * 窄屏用它承载“添加成员”按钮，避免另起一行重复渲染标题。
