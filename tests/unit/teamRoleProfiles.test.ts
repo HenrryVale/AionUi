@@ -6,6 +6,7 @@ import {
   ensureTeamRoleSkills,
   provisionTeamDynamicRoleAssistants,
   provisionTeamRoleAssistant,
+  parseTeamRoleAssistantId,
   resolveTeamRoleDisabledAutoInjectSkills,
   resolveTeamRoleSkills,
   teamRoleAssistantId,
@@ -284,6 +285,19 @@ const shipGate = managedSkills.find((skill) => skill.name === 'ship-gate')!;
 describe('team role profiles', () => {
   it('uses deterministic reusable assistant ids', () => {
     expect(teamRoleAssistantId('bare:claude', 'qa')).toBe('team-role:bare:claude:qa');
+  });
+
+  it('round-trips generated role assistant ids even when the base id contains colons', () => {
+    expect(parseTeamRoleAssistantId('team-role:bare:claude:backend')).toEqual({
+      baseAssistantId: 'bare:claude',
+      specialty: 'backend',
+    });
+    expect(parseTeamRoleAssistantId('team-role:custom:vendor:assistant:qa')).toEqual({
+      baseAssistantId: 'custom:vendor:assistant',
+      specialty: 'qa',
+    });
+    expect(parseTeamRoleAssistantId('bare:claude')).toBeNull();
+    expect(parseTeamRoleAssistantId('team-role:bare:claude:unknown')).toBeNull();
   });
 
   it('persists a machine-readable marker for managed role routing', () => {
