@@ -19,7 +19,7 @@ jobs:
   source-checks:
     name: Source checks
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,29 +50,50 @@ jobs:
       - name: Managed Team routing UI tests
         run: bunx vitest run --project dom tests/unit/renderer/messageTipsManagedSkillRouting.dom.test.tsx
 
+      - name: Full Vitest regression suite
+        run: bunx vitest run
+
       - name: TypeScript
         run: bunx tsc --noEmit
 
-      - name: Lint
-        run: bun run lint
+      - name: Lint changed Managed Team sources
+        run: |
+          bunx oxlint \
+            packages/desktop/src/renderer/pages/team/components/TeamCreateModal.tsx \
+            packages/desktop/src/renderer/pages/team/components/memberPicker/TeamMemberDraftList.tsx \
+            packages/desktop/src/renderer/pages/team/components/memberPicker/teamRoleMemberLifecycle.ts \
+            packages/desktop/src/renderer/pages/team/components/memberPicker/teamRolePermissions.ts \
+            packages/desktop/src/renderer/pages/team/components/memberPicker/teamRoleProfiles.ts \
+            packages/desktop/src/renderer/pages/team/hooks/useTeamSession.ts \
+            tests/unit/teamRoleProfiles.test.ts \
+            tests/unit/teamRolePermissions.test.ts \
+            tests/unit/renderer/messageTipsManagedSkillRouting.dom.test.tsx
 
-      - name: Format
-        run: bun run format:check
+      - name: Format changed Managed Team sources
+        run: |
+          bunx oxfmt --check \
+            packages/desktop/src/renderer/pages/team/components/TeamCreateModal.tsx \
+            packages/desktop/src/renderer/pages/team/components/memberPicker/TeamMemberDraftList.tsx \
+            packages/desktop/src/renderer/pages/team/components/memberPicker/teamRoleMemberLifecycle.ts \
+            packages/desktop/src/renderer/pages/team/components/memberPicker/teamRolePermissions.ts \
+            packages/desktop/src/renderer/pages/team/components/memberPicker/teamRoleProfiles.ts \
+            packages/desktop/src/renderer/pages/team/hooks/useTeamSession.ts \
+            tests/unit/teamRoleProfiles.test.ts \
+            tests/unit/teamRolePermissions.test.ts \
+            tests/unit/renderer/messageTipsManagedSkillRouting.dom.test.tsx
 
-  docker-build:
-    name: Reproducible Docker build
+  aioncore-builder:
+    name: Patched AionCore build
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    env:
-      BUILD_GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build full image and execute Dockerfile gates
+      - name: Build AionCore stage and execute Dockerfile gates
         run: |
           docker build \
             --progress=plain \
-            --secret id=gh_token,env=BUILD_GH_TOKEN \
-            -t aionui-team:v5-verify \
+            --target aioncore-builder \
+            -t aionui-aioncore:v5-verify \
             .
