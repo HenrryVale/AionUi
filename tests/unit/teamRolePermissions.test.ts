@@ -6,7 +6,7 @@ import {
   type TeamRolePermissionAssignment,
   type TeamRolePermissionDeps,
 } from '@/renderer/pages/team/components/memberPicker/teamRolePermissions';
-import { addTeamAssistantWithRolePolicy } from '@/renderer/pages/team/hooks/useTeamSession';
+import { addTeamAssistantWithRolePolicy } from '@/renderer/pages/team/components/memberPicker/teamRoleMemberLifecycle';
 
 const team: TTeam = {
   id: 'team-1',
