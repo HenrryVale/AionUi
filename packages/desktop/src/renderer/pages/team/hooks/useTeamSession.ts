@@ -21,6 +21,12 @@ import { revalidateAcpConfigOptions } from '@/renderer/hooks/agent/useAcpConfigO
 import { getConversationOrNull } from '@/renderer/pages/conversation/utils/conversationCache';
 import { removeTeamAssistantWithCronCleanup } from '../utils/removeTeamAssistantWithCronCleanup';
 import {
+  ensureTeamRoleAssistant,
+  parseTeamRoleAssistantId,
+  TEAM_ROLE_PROFILES,
+} from '../components/memberPicker/teamRoleProfiles';
+import { enforceTeamRolePermissionModeForMember } from '../components/memberPicker/teamRolePermissions';
+import {
   applyTeamRuntimeStatusToMembershipMutationState,
   applyTeamSessionStatusToMembershipMutationState,
   createTeamMembershipMutationState,
@@ -129,7 +135,48 @@ export function useTeamSession(team: TTeam, warmupPhase?: TeamWarmupPhase) {
 
   const addAssistant = useCallback(
     async (assistant: TeamAssistantInput): Promise<TeamAssistant> => {
-      const created = await ipcBridge.team.addAgent.invoke({ team_id: team.id, assistant });
+      const roleIdentity = parseTeamRoleAssistantId(assistant.assistant_id);
+      let resolvedAssistant = assistant;
+
+      if (roleIdentity) {
+        // Reconcile generated role assistants at the point of use. This repairs
+        // persisted pre-marker profiles after an image upgrade and reasserts the
+        // pinned skill catalog before a new Team member references the assistant.
+        const roleAssistant = await ensureTeamRoleAssistant(roleIdentity);
+        resolvedAssistant = {
+          ...assistant,
+          assistant_id: roleAssistant.id,
+        };
+      }
+
+      const created = await ipcBridge.team.addAgent.invoke({
+        team_id: team.id,
+        assistant: resolvedAssistant,
+      });
+
+      if (roleIdentity) {
+        try {
+          await enforceTeamRolePermissionModeForMember(team.id, created, {
+            assistantId: resolvedAssistant.assistant_id,
+            assistantName: created.assistant_name,
+            mode: TEAM_ROLE_PROFILES[roleIdentity.specialty].permissionMode,
+          });
+        } catch (error) {
+          // Never leave a role member attached with a weaker/incorrect runtime
+          // mode when post-add policy enforcement fails.
+          try {
+            await ipcBridge.team.removeAgent.invoke({
+              team_id: team.id,
+              slot_id: created.slot_id,
+            });
+          } catch (rollbackError) {
+            console.error('[TeamSession] Failed to roll back role member after permission error:', rollbackError);
+          }
+          await mutateTeam();
+          throw error;
+        }
+      }
+
       await mutateTeam();
       return created;
     },
