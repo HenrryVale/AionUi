@@ -290,6 +290,55 @@ describe('team role profiles', () => {
     expect(MANAGED_TEAM_ROLE_ROUTING_MARKER).toBe('[Managed Team Role Routing v1]');
   });
 
+  it('persists the routing marker and exact curated catalog for every managed role', async () => {
+    const createAssistant = vi.fn(async (request) => ({
+      ...baseAssistant,
+      id: request.id!,
+      name: request.name,
+      source: 'user' as const,
+      enabled_skills: request.enabled_skills ?? [],
+    }));
+    const writeAssistantRule = vi.fn(async () => undefined);
+    const specialties = Object.keys(TEAM_ROLE_PROFILES) as Array<keyof typeof TEAM_ROLE_PROFILES>;
+
+    for (const specialty of specialties) {
+      await provisionTeamRoleAssistant(
+        { baseAssistantId: baseAssistant.id, specialty },
+        {
+          listAssistants: vi.fn(async () => [baseAssistant]),
+          getAssistant: vi.fn(async () => baseDetail),
+          createAssistant,
+          updateAssistant: vi.fn(),
+          setAssistantState: vi.fn(async () => undefined),
+          listAvailableSkills: vi.fn(async () => managedSkills),
+          writeAssistantRule,
+        }
+      );
+    }
+
+    expect(createAssistant).toHaveBeenCalledTimes(specialties.length);
+    expect(writeAssistantRule).toHaveBeenCalledTimes(specialties.length);
+
+    for (const specialty of specialties) {
+      const expectedSkills = [...TEAM_ROLE_SKILL_POLICIES[specialty].skills];
+      const roleId = teamRoleAssistantId(baseAssistant.id, specialty);
+
+      expect(createAssistant).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: roleId,
+          enabled_skills: expectedSkills,
+          defaults: expect.objectContaining({
+            skills: { mode: 'fixed', value: expectedSkills },
+          }),
+        })
+      );
+      expect(writeAssistantRule).toHaveBeenCalledWith(
+        roleId,
+        `${MANAGED_TEAM_ROLE_ROUTING_MARKER}\n${TEAM_ROLE_PROFILES[specialty].rules}`
+      );
+    }
+  });
+
   it('assigns execution policy by responsibility', () => {
     expect(TEAM_ROLE_PROFILES.pm.permissionMode).toBe('bypassPermissions');
     expect(TEAM_ROLE_PROFILES.backend.permissionMode).toBe('bypassPermissions');
