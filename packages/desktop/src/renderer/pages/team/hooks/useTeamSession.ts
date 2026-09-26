@@ -23,6 +23,7 @@ import { removeTeamAssistantWithCronCleanup } from '../utils/removeTeamAssistant
 import { ensureTeamRoleAssistant } from '../components/memberPicker/teamRoleProfiles';
 import { enforceTeamRolePermissionModeForMember } from '../components/memberPicker/teamRolePermissions';
 import { addTeamAssistantWithRolePolicy } from '../components/memberPicker/teamRoleMemberLifecycle';
+import { resolveDefaultTeamAgentModel } from '../components/teamCreateModelResolver';
 import {
   applyTeamRuntimeStatusToMembershipMutationState,
   applyTeamSessionStatusToMembershipMutationState,
@@ -140,6 +141,8 @@ export function useTeamSession(team: TTeam, warmupPhase?: TeamWarmupPhase) {
             assistant: resolvedAssistant,
           }),
         enforceRoleMode: enforceTeamRolePermissionModeForMember,
+        resolveRoleModel: (assistantId) =>
+          resolveDefaultTeamAgentModel({ assistant_id: assistantId }),
         removeAgent: (slotId) =>
           ipcBridge.team.removeAgent.invoke({
             team_id: team.id,
