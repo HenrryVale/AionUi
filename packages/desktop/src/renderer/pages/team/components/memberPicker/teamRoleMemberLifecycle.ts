@@ -11,6 +11,7 @@ export type AddTeamAssistantRolePolicyDeps = {
   ensureRoleAssistant: typeof ensureTeamRoleAssistant;
   addAgent: (assistant: TeamAssistantInput) => Promise<TeamAssistant>;
   enforceRoleMode: typeof enforceTeamRolePermissionModeForMember;
+  resolveRoleModel: (assistantId: string) => Promise<string>;
   removeAgent: (slotId: string) => Promise<unknown>;
   mutateTeam: () => Promise<unknown>;
 };
@@ -31,6 +32,9 @@ export async function addTeamAssistantWithRolePolicy(
     resolvedAssistant = {
       ...assistant,
       assistant_id: roleAssistant.id,
+      // Re-resolve after provisioning. A persisted role profile can have stale
+      // model defaults even when its generated assistant id is unchanged.
+      model: await deps.resolveRoleModel(roleAssistant.id),
     };
   }
 
