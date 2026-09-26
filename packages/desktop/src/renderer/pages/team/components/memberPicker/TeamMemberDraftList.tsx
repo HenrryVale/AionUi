@@ -8,6 +8,7 @@ import {
   TEAM_MEMBER_SPECIALTIES,
   type TeamMemberSpecialty,
 } from './teamMemberIdentity';
+import { supportsManagedTeamRoleBackend } from './teamRoleProfiles';
 
 export type TeamMemberDraft = {
   selectionId: string;
@@ -100,6 +101,9 @@ const TeamMemberDraftList: React.FC<Props> = ({
               ? t('team.create.currentLeader', { defaultValue: 'Current Leader' })
               : t('team.create.setAsLeader', { defaultValue: 'Set as Leader' });
             const resolvedName = composeTeamMemberName(member.memberName, member.specialty);
+            const specialtyOptions = supportsManagedTeamRoleBackend(member.assistant.backend)
+              ? TEAM_MEMBER_SPECIALTIES
+              : TEAM_MEMBER_SPECIALTIES.filter((option) => option.value === 'general');
 
             return (
               <div
@@ -152,7 +156,7 @@ const TeamMemberDraftList: React.FC<Props> = ({
                     onChange={(specialty) =>
                       onUpdate(member.selectionId, { specialty: specialty as TeamMemberSpecialty })
                     }
-                    options={TEAM_MEMBER_SPECIALTIES.map((option) => ({
+                    options={specialtyOptions.map((option) => ({
                       value: option.value,
                       label: option.label,
                     }))}
