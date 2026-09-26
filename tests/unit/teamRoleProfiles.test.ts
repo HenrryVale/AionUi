@@ -420,6 +420,24 @@ describe('team role profiles', () => {
     expect(patch).toContain('managed Team role attach mode: expected exactly two runtime mode anchors');
   });
 
+  it('keeps managed specialty UI and create-time validation scoped to supported backends', () => {
+    const draftList = fs.readFileSync(
+      'packages/desktop/src/renderer/pages/team/components/memberPicker/TeamMemberDraftList.tsx',
+      'utf8'
+    );
+    const createModal = fs.readFileSync(
+      'packages/desktop/src/renderer/pages/team/components/TeamCreateModal.tsx',
+      'utf8'
+    );
+
+    expect(draftList).toContain('supportsManagedTeamRoleBackend(member.assistant.backend)');
+    expect(draftList).toContain("option.value === 'general'");
+    expect(createModal).toContain(
+      "!supportsManagedTeamRoleBackend(member.assistant.backend)"
+    );
+    expect(createModal).toContain('managed Team specialties currently require Claude Code');
+  });
+
   it('assigns execution policy by responsibility', () => {
     expect(TEAM_ROLE_PROFILES.pm.permissionMode).toBe('bypassPermissions');
     expect(TEAM_ROLE_PROFILES.backend.permissionMode).toBe('bypassPermissions');
