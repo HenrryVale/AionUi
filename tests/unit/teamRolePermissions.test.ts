@@ -213,6 +213,7 @@ describe('team role permission enforcement', () => {
     const ensureRoleAssistant = vi.fn(async () => ({ id: 'team-role:bare:claude:qa' }) as never);
     const addAgent = vi.fn(async () => created);
     const enforceRoleMode = vi.fn(async () => undefined);
+    const resolveRoleModel = vi.fn(async () => 'claude-current');
     const removeAgent = vi.fn(async () => undefined);
     const mutateTeam = vi.fn(async () => undefined);
 
@@ -228,6 +229,7 @@ describe('team role permission enforcement', () => {
         ensureRoleAssistant,
         addAgent,
         enforceRoleMode,
+        resolveRoleModel,
         removeAgent,
         mutateTeam,
       }
@@ -238,8 +240,12 @@ describe('team role permission enforcement', () => {
       baseAssistantId: 'bare:claude',
       specialty: 'qa',
     });
+    expect(resolveRoleModel).toHaveBeenCalledWith('team-role:bare:claude:qa');
     expect(addAgent).toHaveBeenCalledWith(
-      expect.objectContaining({ assistant_id: 'team-role:bare:claude:qa' })
+      expect.objectContaining({
+        assistant_id: 'team-role:bare:claude:qa',
+        model: 'claude-current',
+      })
     );
     expect(enforceRoleMode).toHaveBeenCalledWith(
       'team-1',
@@ -261,6 +267,7 @@ describe('team role permission enforcement', () => {
     const enforceRoleMode = vi.fn(async () => {
       throw new Error('plan mode unavailable');
     });
+    const resolveRoleModel = vi.fn(async () => 'claude-current');
     const removeAgent = vi.fn(async () => undefined);
     const mutateTeam = vi.fn(async () => undefined);
 
@@ -277,6 +284,7 @@ describe('team role permission enforcement', () => {
           ensureRoleAssistant,
           addAgent,
           enforceRoleMode,
+          resolveRoleModel,
           removeAgent,
           mutateTeam,
         }
