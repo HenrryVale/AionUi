@@ -339,7 +339,7 @@ describe('team role profiles', () => {
           writeAssistantRule: vi.fn(async () => undefined),
         }
       )
-    ).rejects.toThrow('managed Team role profiles currently require the Claude backend');
+    ).rejects.toThrow('Managed Team role profiles currently require the Claude backend');
 
   });
 
