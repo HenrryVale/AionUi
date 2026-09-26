@@ -235,6 +235,23 @@ export function teamRoleAssistantId(baseAssistantId: string, specialty: Provisio
   return `team-role:${baseAssistantId}:${specialty}`;
 }
 
+export function parseTeamRoleAssistantId(
+  assistantId: string
+): EnsureTeamRoleAssistantInput | null {
+  const prefix = 'team-role:';
+  if (!assistantId.startsWith(prefix)) return null;
+
+  const payload = assistantId.slice(prefix.length);
+  const separator = payload.lastIndexOf(':');
+  if (separator <= 0 || separator === payload.length - 1) return null;
+
+  const baseAssistantId = payload.slice(0, separator);
+  const specialty = payload.slice(separator + 1) as ProvisionableTeamMemberSpecialty;
+  if (!Object.prototype.hasOwnProperty.call(TEAM_ROLE_PROFILES, specialty)) return null;
+
+  return { baseAssistantId, specialty };
+}
+
 export function resolveTeamRoleSkills(
   specialty: ProvisionableTeamMemberSpecialty,
   availableSkills: SkillInfo[],
