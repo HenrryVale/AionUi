@@ -25,6 +25,7 @@ import {
 import {
   ensureTeamDynamicRoleAssistants,
   ensureTeamRoleAssistant,
+  supportsManagedTeamRoleBackend,
   TEAM_ROLE_PROFILES,
 } from './memberPicker/teamRoleProfiles';
 import { enforceTeamRolePermissionModes } from './memberPicker/teamRolePermissions';
@@ -115,6 +116,20 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
     }
     if (!hasOneLeader) {
       Message.warning(t('team.create.selectOneLeader', { defaultValue: 'Select one Team Leader' }));
+      return;
+    }
+
+    const unsupportedManagedRole = selectedMembers.find(
+      (member) =>
+        member.specialty !== 'general' &&
+        !supportsManagedTeamRoleBackend(member.assistant.backend)
+    );
+    if (unsupportedManagedRole) {
+      Message.warning(
+        t('team.create.managedRoleBackendUnsupported', {
+          defaultValue: `${unsupportedManagedRole.assistant.name}: managed Team specialties currently require Claude Code. Use General for this backend.`,
+        })
+      );
       return;
     }
 
