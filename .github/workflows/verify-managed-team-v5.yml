@@ -1,0 +1,78 @@
+name: Verify Managed Team v5
+
+on:
+  push:
+    branches:
+      - fix/a2-backend-routing-regression
+    paths-ignore:
+      - '**/*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-managed-team-v5-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-checks:
+    name: Source checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+          cache: true
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Python patch syntax
+        run: python3 -m py_compile scripts/aioncore/patch-managed-skills.py
+
+      - name: Managed Team role profile tests
+        run: bunx vitest run --project node tests/unit/teamRoleProfiles.test.ts
+
+      - name: Managed Team permission lifecycle tests
+        run: bunx vitest run --project node tests/unit/teamRolePermissions.test.ts
+
+      - name: Managed Team routing UI tests
+        run: bunx vitest run --project dom tests/unit/renderer/messageTipsManagedSkillRouting.dom.test.tsx
+
+      - name: TypeScript
+        run: bunx tsc --noEmit
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Format
+        run: bun run format:check
+
+  docker-build:
+    name: Reproducible Docker build
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      BUILD_GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build full image and execute Dockerfile gates
+        run: |
+          docker build \
+            --progress=plain \
+            --secret id=gh_token,env=BUILD_GH_TOKEN \
+            -t aionui-team:v5-verify \
+            .
