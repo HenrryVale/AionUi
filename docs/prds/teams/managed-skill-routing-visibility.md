@@ -193,3 +193,45 @@ machine-readable marker cannot silently disappear while the renderer routing
 card test continues to pass.
 
 A2 Backend remains pending until the marker-based routing change is rebuilt and proven in a fresh runtime canary. The power-loss interrupted runtime log collection; the repository-level activation defect is independently demonstrated by source inspection and regression coverage, but the fix is not yet claimed as runtime PASS.
+
+## Cross-profile validation
+
+Expanding the A2 fix to every managed Team role exposed a second systemic edge case.
+Once the marker activates managed routing for all roles, a legitimate task that has
+no matching managed skill route must not abort the model turn. Examples include a
+normal PM coordination turn, a generic architecture design request, or a Backend
+feature implementation that is neither debugging nor security work.
+
+The runtime therefore distinguishes two cases:
+
+- **No managed route applies:** continue the Team turn normally and inject no
+  per-turn managed skill card.
+- **A managed route applies but violates the role allowlist, provenance, bundle
+  root, required gate, or skill-body contract:** fail closed as before.
+
+This keeps deterministic routing additive rather than making the curated skill
+pack a prerequisite for every possible responsibility of a Team role.
+
+Verification/completion language now maps to `ship.default`, allowing the three
+ship-only profiles to use their one curated capability without inventing support
+skills.
+
+Repository regression coverage now spans every profile family:
+
+| Profile | Curated surface | Representative managed route |
+| --- | --- | --- |
+| PM | `ship-gate` | `ship.default -> ship-gate` |
+| Architect | `security-gate`, `prompt-injection-gate`, `ship-gate` | `security.default` |
+| Backend | 5 skills | `debug.default -> debug-gate + test-first-gate` |
+| Frontend | 16 skills | `design.ux_audit -> ux-heuristics + refactoring-ui` |
+| Full Stack | 8 skills | `debug.default -> debug-gate + test-first-gate` |
+| QA | `ship-gate` | `ship.default -> ship-gate` |
+| Security | 3 skills | `security.default -> security-gate + prompt-injection-gate + ship-gate` |
+| DevOps | 4 skills | `debug.default -> debug-gate`; unavailable test support is filtered |
+| Reviewer | `ship-gate` | `review.implementation` or `ship.default` |
+
+The provisioning unit test also provisions every role and asserts that each
+assistant receives exactly its pinned curated catalog plus the
+`[Managed Team Role Routing v1]` marker. The renderer test covers both A2's
+two-skill card and a ship-only one-skill card, ensuring the UI does not invent
+support skills or gates.
