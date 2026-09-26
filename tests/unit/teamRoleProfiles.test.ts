@@ -353,6 +353,30 @@ describe('team role profiles', () => {
     }
   });
 
+  it('keeps AionCore dynamic add/spawn permission modes synchronized with renderer profiles', () => {
+    const patch = fs.readFileSync('scripts/aioncore/patch-managed-skills.py', 'utf8');
+
+    const planRoles = Object.entries(TEAM_ROLE_PROFILES)
+      .filter(([, profile]) => profile.permissionMode === 'plan')
+      .map(([specialty]) => specialty);
+    const bypassRoles = Object.entries(TEAM_ROLE_PROFILES)
+      .filter(([, profile]) => profile.permissionMode === 'bypassPermissions')
+      .map(([specialty]) => specialty);
+
+    expect(planRoles).toEqual(['architect', 'qa', 'security', 'reviewer']);
+    expect(bypassRoles).toEqual(['pm', 'backend', 'frontend', 'fullstack', 'devops']);
+
+    expect(patch).toContain(
+      '\"architect\" | \"qa\" | \"security\" | \"reviewer\" => Ok(Some(\"plan\"))'
+    );
+    expect(patch).toContain(
+      '\"pm\" | \"backend\" | \"frontend\" | \"fullstack\" | \"devops\" => {'
+    );
+    expect(patch).toContain('add-agent role session seed');
+    expect(patch).toContain('spawn-agent role session seed');
+    expect(patch).toContain('managed Team role attach mode: expected exactly two runtime mode anchors');
+  });
+
   it('assigns execution policy by responsibility', () => {
     expect(TEAM_ROLE_PROFILES.pm.permissionMode).toBe('bypassPermissions');
     expect(TEAM_ROLE_PROFILES.backend.permissionMode).toBe('bypassPermissions');
