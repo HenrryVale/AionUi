@@ -1,7 +1,7 @@
 import { ipcBridge } from '@/common';
 import type { TChatConversation } from '@/common/config/storage';
 import type { GetConfigOptionsResponse, SetConfigOptionResponse } from '@/common/types/platform/acpTypes';
-import type { TTeam } from '@/common/types/team/teamTypes';
+import type { TeamAssistant, TTeam } from '@/common/types/team/teamTypes';
 import type { TeamRolePermissionMode } from './teamRoleProfiles';
 
 export type TeamRolePermissionAssignment = {
@@ -178,4 +178,25 @@ export async function enforceTeamRolePermissionModes(
   assignments: TeamRolePermissionAssignment[]
 ): Promise<void> {
   return enforceTeamRolePermissionModesWithDeps(team, assignments, liveDeps);
+}
+
+export async function enforceTeamRolePermissionModeForMemberWithDeps(
+  teamId: string,
+  member: TeamAssistant,
+  assignment: TeamRolePermissionAssignment,
+  deps: TeamRolePermissionDeps
+): Promise<void> {
+  const minimalTeam = {
+    id: teamId,
+    assistants: [member],
+  } as TTeam;
+  return enforceTeamRolePermissionModesWithDeps(minimalTeam, [assignment], deps);
+}
+
+export async function enforceTeamRolePermissionModeForMember(
+  teamId: string,
+  member: TeamAssistant,
+  assignment: TeamRolePermissionAssignment
+): Promise<void> {
+  return enforceTeamRolePermissionModeForMemberWithDeps(teamId, member, assignment, liveDeps);
 }
