@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { TTeam } from '@/common/types/team/teamTypes';
 import {
+  enforceTeamRolePermissionModeForMemberWithDeps,
   enforceTeamRolePermissionModesWithDeps,
   type TeamRolePermissionAssignment,
   type TeamRolePermissionDeps,
@@ -128,6 +129,18 @@ describe('team role permission enforcement', () => {
       'set:team-1:conv-qa:mode:plan',
       'seed:conv-qa:plan',
     ]);
+  });
+
+  it('enforces the same restrictive policy for one member added to an existing team', async () => {
+    const d = deps();
+    const member = team.assistants.find((assistant) => assistant.slot_id === 'slot-qa')!;
+
+    await enforceTeamRolePermissionModeForMemberWithDeps('team-1', member, qaAssignment, d);
+
+    expect(d.seedConversationMode).toHaveBeenCalledWith('conv-qa', 'plan');
+    expect(d.ensureSession).toHaveBeenCalledWith('team-1');
+    expect(d.attachAgent).toHaveBeenCalledWith('team-1', 'slot-qa');
+    expect(d.setConfigOption).toHaveBeenCalledWith('team-1', 'conv-qa', 'mode', 'plan');
   });
 
   it('keeps full-auto teammates lazy', async () => {
