@@ -235,3 +235,40 @@ assistant receives exactly its pinned curated catalog plus the
 `[Managed Team Role Routing v1]` marker. The renderer test covers both A2's
 two-skill card and a ship-only one-skill card, ensuring the UI does not invent
 support skills or gates.
+
+
+### Role-policy applicability
+
+Cross-profile task-matrix review found that classification can legitimately select a
+route or mandatory gate that is outside a narrower role catalog. For example:
+
+- QA/Reviewer/PM can receive verification or review tasks whose subject mentions
+  authentication or a bug even though those roles intentionally expose only
+  `ship-gate`;
+- Frontend can receive a generic debugging request even though `debug-gate` is
+  not in the Frontend catalog;
+- DevOps can receive an implementation/debugging request whose global
+  `behavior_change` gate is `test-first-gate`, which is intentionally absent
+  from the current DevOps catalog.
+
+Those are policy applicability mismatches, not bundle-integrity failures. The
+direct runtime now treats three outcomes as **no managed route for this role**:
+unclassified task, primary outside the role allowlist, or mandatory gate outside
+the role allowlist. The model turn continues with the role's fixed rules and
+capability snapshot, and no per-turn routing card is emitted.
+
+The strict lower-level router still reports those cases as errors so policy tests
+can detect them. Integrity failures remain fatal at runtime: malformed/missing
+router YAML, invalid managed source provenance/root, missing selected skill
+source, unreadable or empty selected skill body, and related bundle corruption
+still fail closed.
+
+### Upgrade caveat for persisted role assistants
+
+The routing marker is persisted in the generated `team-role:*` assistant rule.
+New provisioning and re-provisioning writes the marker, but an already persisted
+role assistant created by an older image is not retroactively rewritten merely
+because the container image changed. Runtime canaries must therefore use a newly
+provisioned/re-provisioned role assistant. A separate reconciliation/migration
+path is required before claiming transparent upgrade behavior for existing Team
+members.
