@@ -1,11 +1,8 @@
 import type { TeamAssistantInput } from '@/common/adapter/teamMapper';
 import type { TeamAssistant } from '@/common/types/team/teamTypes';
-import {
-  ensureTeamRoleAssistant,
-  parseTeamRoleAssistantId,
-  TEAM_ROLE_PROFILES,
-} from './teamRoleProfiles';
-import { enforceTeamRolePermissionModeForMember } from './teamRolePermissions';
+import type { ensureTeamRoleAssistant } from './teamRoleProfiles';
+import { parseTeamRoleAssistantId, TEAM_ROLE_PROFILES } from './teamRoleProfiles';
+import type { enforceTeamRolePermissionModeForMember } from './teamRolePermissions';
 
 export type AddTeamAssistantRolePolicyDeps = {
   ensureRoleAssistant: typeof ensureTeamRoleAssistant;
