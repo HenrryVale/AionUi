@@ -767,6 +767,25 @@ mod managed_team_router_bootstrap_tests {
     }
 
     #[tokio::test]
+    async fn team_without_skill_design_preserves_managed_role_marker() {
+        let prefix =
+            "[Assistant Rules]\n[Managed Team Role Routing v1]\n[/Assistant Rules]"
+                .to_owned();
+
+        let result = bootstrap_managed_team_router_prefix(
+            "conv-backend-marker",
+            true,
+            &["ship-gate".to_owned()],
+            &[],
+            Some(prefix.clone()),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.as_deref(), Some(prefix.as_str()));
+    }
+
+    #[tokio::test]
     async fn team_router_bootstrap_injects_full_skill_body() {
         let tmp = tempfile::TempDir::new().unwrap();
         let root = tmp.path().join("skill-design");
@@ -936,8 +955,8 @@ mod managed_direct_cli_skill_delivery_tests {
 }
 """
     new_task_field = """    prompt_dump: Option<SessionPromptDump>,
-    /// Present only for a Team direct-CLI session whose managed skill-design
-    /// bootstrap was proven at factory time.
+    /// Present only for a Team direct-CLI session whose managed role marker
+    /// was proven in the injected Assistant Rules prefix.
     managed_team_routing: Option<crate::managed_team_routing::ManagedTeamRoutingContext>,
 }
 """
