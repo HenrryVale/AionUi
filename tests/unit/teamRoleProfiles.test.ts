@@ -9,6 +9,7 @@ import {
   parseTeamRoleAssistantId,
   resolveTeamRoleDisabledAutoInjectSkills,
   resolveTeamRoleSkills,
+  supportsManagedTeamRoleBackend,
   teamRoleAssistantId,
   MANAGED_TEAM_ROLE_ROUTING_MARKER,
   TEAM_ROLE_PROFILES,
@@ -298,6 +299,48 @@ describe('team role profiles', () => {
     });
     expect(parseTeamRoleAssistantId('bare:claude')).toBeNull();
     expect(parseTeamRoleAssistantId('team-role:bare:claude:unknown')).toBeNull();
+  });
+
+  it('limits managed role routing v1 to the proven Claude backend', () => {
+    expect(supportsManagedTeamRoleBackend('claude')).toBe(true);
+    expect(supportsManagedTeamRoleBackend(' CLAUDE ')).toBe(true);
+    expect(supportsManagedTeamRoleBackend('codex')).toBe(false);
+    expect(supportsManagedTeamRoleBackend('aionrs')).toBe(false);
+    expect(supportsManagedTeamRoleBackend('opencode')).toBe(false);
+    expect(supportsManagedTeamRoleBackend(undefined)).toBe(false);
+  });
+
+  it('rejects provisioning a managed role from a known unsupported backend', async () => {
+    const aionrsBase: Assistant = {
+      ...baseAssistant,
+      id: 'bare:aionrs',
+      agent_id: 'aionrs-agent',
+      agent: { type: 'aionrs', source: 'internal' },
+    };
+    const aionrsDetail = {
+      ...baseDetail,
+      id: aionrsBase.id,
+      engine: {
+        agent_id: aionrsBase.agent_id,
+        agent: { type: 'aionrs', source: 'internal' as const },
+      },
+    };
+
+    await expect(
+      provisionTeamRoleAssistant(
+        { baseAssistantId: aionrsBase.id, specialty: 'qa' },
+        {
+          listAssistants: vi.fn(async () => [aionrsBase]),
+          getAssistant: vi.fn(async () => aionrsDetail),
+          createAssistant: vi.fn(),
+          updateAssistant: vi.fn(),
+          setAssistantState: vi.fn(async () => undefined),
+          listAvailableSkills: vi.fn(async () => managedSkills),
+          writeAssistantRule: vi.fn(async () => undefined),
+        }
+      )
+    ).rejects.toThrow('managed Team role profiles currently require the Claude backend');
+
   });
 
   it('persists a machine-readable marker for managed role routing', () => {
