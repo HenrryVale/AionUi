@@ -410,10 +410,10 @@ describe('team role profiles', () => {
     expect(bypassRoles).toEqual(['pm', 'backend', 'frontend', 'fullstack', 'devops']);
 
     expect(patch).toContain(
-      '\"architect\" | \"qa\" | \"security\" | \"reviewer\" => Ok(Some(\"plan\"))'
+      '"architect" | "qa" | "security" | "reviewer" => Ok(Some("plan"))'
     );
     expect(patch).toContain(
-      '\"pm\" | \"backend\" | \"frontend\" | \"fullstack\" | \"devops\" => {'
+      '"pm" | "backend" | "frontend" | "fullstack" | "devops" => {'
     );
     expect(patch).toContain('add-agent role session seed');
     expect(patch).toContain('spawn-agent role session seed');
