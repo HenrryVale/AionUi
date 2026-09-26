@@ -49,7 +49,10 @@ export async function addTeamAssistantWithRolePolicy(
       try {
         await deps.removeAgent(created.slot_id);
       } catch (rollbackError) {
-        console.error('[TeamRoleMemberLifecycle] Failed to roll back role member after permission error:', rollbackError);
+        console.error(
+          '[TeamRoleMemberLifecycle] Failed to roll back role member after permission error:',
+          rollbackError
+        );
       }
       await deps.mutateTeam();
       throw error;
