@@ -20,6 +20,19 @@ export type TeamRolePermissionMode = 'plan' | 'bypassPermissions';
 
 export const MANAGED_TEAM_ROLE_ROUTING_MARKER = '[Managed Team Role Routing v1]';
 
+/**
+ * Managed role routing v1 is currently proven end-to-end only on Claude's
+ * injected direct-CLI delivery path. Other assistants remain valid Team
+ * members in the General specialty until their routing path has equivalent
+ * runtime coverage.
+ */
+export const MANAGED_TEAM_ROLE_SUPPORTED_BACKENDS = new Set(['claude']);
+
+export function supportsManagedTeamRoleBackend(backend?: string): boolean {
+  const normalized = backend?.trim().toLowerCase();
+  return Boolean(normalized && MANAGED_TEAM_ROLE_SUPPORTED_BACKENDS.has(normalized));
+}
+
 type TeamRoleProfile = {
   label: string;
   description: string;
@@ -394,6 +407,14 @@ export async function provisionTeamRoleAssistant(
     deps.getAssistant(base.id),
     deps.listAvailableSkills(),
   ]);
+
+  const baseAgent = baseDetail.engine.agent ?? base.agent;
+  const baseBackend = baseAgent?.acp_backend || baseAgent?.type;
+  if (baseBackend && !supportsManagedTeamRoleBackend(baseBackend)) {
+    throw new Error(
+      `Managed Team role profiles currently require the Claude backend; got ${baseBackend} for ${base.id}`
+    );
+  }
 
   const matchedSkills = await ensureTeamRoleSkills(input.specialty, {
     listAvailableSkills: async () => availableSkills,
