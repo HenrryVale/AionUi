@@ -22,10 +22,9 @@ import { getConversationOrNull } from '@/renderer/pages/conversation/utils/conve
 import { removeTeamAssistantWithCronCleanup } from '../utils/removeTeamAssistantWithCronCleanup';
 import {
   ensureTeamRoleAssistant,
-  parseTeamRoleAssistantId,
-  TEAM_ROLE_PROFILES,
 } from '../components/memberPicker/teamRoleProfiles';
 import { enforceTeamRolePermissionModeForMember } from '../components/memberPicker/teamRolePermissions';
+import { addTeamAssistantWithRolePolicy } from '../components/memberPicker/teamRoleMemberLifecycle';
 import {
   applyTeamRuntimeStatusToMembershipMutationState,
   applyTeamSessionStatusToMembershipMutationState,
@@ -39,54 +38,6 @@ type AgentStatusInfo = {
   status: TeammateStatus;
   last_message?: string;
 };
-
-export type AddTeamAssistantRolePolicyDeps = {
-  ensureRoleAssistant: typeof ensureTeamRoleAssistant;
-  addAgent: (assistant: TeamAssistantInput) => Promise<TeamAssistant>;
-  enforceRoleMode: typeof enforceTeamRolePermissionModeForMember;
-  removeAgent: (slotId: string) => Promise<unknown>;
-  mutateTeam: () => Promise<unknown>;
-};
-
-export async function addTeamAssistantWithRolePolicy(
-  teamId: string,
-  assistant: TeamAssistantInput,
-  deps: AddTeamAssistantRolePolicyDeps
-): Promise<TeamAssistant> {
-  const roleIdentity = parseTeamRoleAssistantId(assistant.assistant_id);
-  let resolvedAssistant = assistant;
-
-  if (roleIdentity) {
-    const roleAssistant = await deps.ensureRoleAssistant(roleIdentity);
-    resolvedAssistant = {
-      ...assistant,
-      assistant_id: roleAssistant.id,
-    };
-  }
-
-  const created = await deps.addAgent(resolvedAssistant);
-
-  if (roleIdentity) {
-    try {
-      await deps.enforceRoleMode(teamId, created, {
-        assistantId: resolvedAssistant.assistant_id,
-        assistantName: created.assistant_name,
-        mode: TEAM_ROLE_PROFILES[roleIdentity.specialty].permissionMode,
-      });
-    } catch (error) {
-      try {
-        await deps.removeAgent(created.slot_id);
-      } catch (rollbackError) {
-        console.error('[TeamSession] Failed to roll back role member after permission error:', rollbackError);
-      }
-      await deps.mutateTeam();
-      throw error;
-    }
-  }
-
-  await deps.mutateTeam();
-  return created;
-}
 
 export function useTeamSession(team: TTeam, warmupPhase?: TeamWarmupPhase) {
   const { mutate: mutateTeam } = useSWR(team.id ? `team/${team.id}` : null, () =>
