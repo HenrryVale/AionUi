@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { TTeam } from '@/common/types/team/teamTypes';
 import {
+  enforceTeamRolePermissionModeForMemberWithDeps,
   enforceTeamRolePermissionModesWithDeps,
   type TeamRolePermissionAssignment,
   type TeamRolePermissionDeps,
 } from '@/renderer/pages/team/components/memberPicker/teamRolePermissions';
+import { addTeamAssistantWithRolePolicy } from '@/renderer/pages/team/components/memberPicker/teamRoleMemberLifecycle';
 
 const team: TTeam = {
   id: 'team-1',
@@ -130,6 +132,18 @@ describe('team role permission enforcement', () => {
     ]);
   });
 
+  it('enforces the same restrictive policy for one member added to an existing team', async () => {
+    const d = deps();
+    const member = team.assistants.find((assistant) => assistant.slot_id === 'slot-qa')!;
+
+    await enforceTeamRolePermissionModeForMemberWithDeps('team-1', member, qaAssignment, d);
+
+    expect(d.seedConversationMode).toHaveBeenCalledWith('conv-qa', 'plan');
+    expect(d.ensureSession).toHaveBeenCalledWith('team-1');
+    expect(d.attachAgent).toHaveBeenCalledWith('team-1', 'slot-qa');
+    expect(d.setConfigOption).toHaveBeenCalledWith('team-1', 'conv-qa', 'mode', 'plan');
+  });
+
   it('keeps full-auto teammates lazy', async () => {
     const d = deps();
 
@@ -172,9 +186,9 @@ describe('team role permission enforcement', () => {
       getConfigOptions: vi.fn(async () => unsupported),
     });
 
-    await expect(
-      enforceTeamRolePermissionModesWithDeps(team, [qaAssignment], d)
-    ).rejects.toThrow('Required permission mode "plan" is unavailable');
+    await expect(enforceTeamRolePermissionModesWithDeps(team, [qaAssignment], d)).rejects.toThrow(
+      'Required permission mode "plan" is unavailable'
+    );
 
     expect(d.setConfigOption).not.toHaveBeenCalled();
   });
@@ -183,15 +197,98 @@ describe('team role permission enforcement', () => {
     const d = deps();
 
     await expect(
-      enforceTeamRolePermissionModesWithDeps(
-        team,
-        [{ ...qaAssignment, assistantName: 'Claude QA Missing' }],
-        d
-      )
+      enforceTeamRolePermissionModesWithDeps(team, [{ ...qaAssignment, assistantName: 'Claude QA Missing' }], d)
     ).rejects.toThrow('Role member not found');
 
     expect(d.seedConversationMode).not.toHaveBeenCalled();
     expect(d.ensureSession).not.toHaveBeenCalled();
+  });
+
+  it('re-provisions and enforces a generated role when adding it to an existing team', async () => {
+    const created = team.assistants.find((assistant) => assistant.slot_id === 'slot-qa')!;
+    const ensureRoleAssistant = vi.fn(async () => ({ id: 'team-role:bare:claude:qa' }) as never);
+    const addAgent = vi.fn(async () => created);
+    const enforceRoleMode = vi.fn(async () => undefined);
+    const resolveRoleModel = vi.fn(async () => 'claude-current');
+    const removeAgent = vi.fn(async () => undefined);
+    const mutateTeam = vi.fn(async () => undefined);
+
+    const result = await addTeamAssistantWithRolePolicy(
+      'team-1',
+      {
+        role: 'teammate',
+        assistant_name: 'Claude QA',
+        assistant_id: 'team-role:bare:claude:qa',
+        model: 'claude-sonnet',
+      },
+      {
+        ensureRoleAssistant,
+        addAgent,
+        enforceRoleMode,
+        resolveRoleModel,
+        removeAgent,
+        mutateTeam,
+      }
+    );
+
+    expect(result).toBe(created);
+    expect(ensureRoleAssistant).toHaveBeenCalledWith({
+      baseAssistantId: 'bare:claude',
+      specialty: 'qa',
+    });
+    expect(resolveRoleModel).toHaveBeenCalledWith('team-role:bare:claude:qa');
+    expect(addAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistant_id: 'team-role:bare:claude:qa',
+        model: 'claude-current',
+      })
+    );
+    expect(enforceRoleMode).toHaveBeenCalledWith(
+      'team-1',
+      created,
+      expect.objectContaining({
+        assistantId: 'team-role:bare:claude:qa',
+        assistantName: 'Claude QA',
+        mode: 'plan',
+      })
+    );
+    expect(removeAgent).not.toHaveBeenCalled();
+    expect(mutateTeam).toHaveBeenCalledTimes(1);
+  });
+
+  it('rolls back a newly added role member when runtime permission enforcement fails', async () => {
+    const created = team.assistants.find((assistant) => assistant.slot_id === 'slot-qa')!;
+    const ensureRoleAssistant = vi.fn(async () => ({ id: 'team-role:bare:claude:qa' }) as never);
+    const addAgent = vi.fn(async () => created);
+    const enforceRoleMode = vi.fn(async () => {
+      throw new Error('plan mode unavailable');
+    });
+    const resolveRoleModel = vi.fn(async () => 'claude-current');
+    const removeAgent = vi.fn(async () => undefined);
+    const mutateTeam = vi.fn(async () => undefined);
+
+    await expect(
+      addTeamAssistantWithRolePolicy(
+        'team-1',
+        {
+          role: 'teammate',
+          assistant_name: 'Claude QA',
+          assistant_id: 'team-role:bare:claude:qa',
+          model: 'claude-sonnet',
+        },
+        {
+          ensureRoleAssistant,
+          addAgent,
+          enforceRoleMode,
+          resolveRoleModel,
+          removeAgent,
+          mutateTeam,
+        }
+      )
+    ).rejects.toThrow('plan mode unavailable');
+
+    expect(removeAgent).toHaveBeenCalledWith('slot-qa');
+    expect(mutateTeam).toHaveBeenCalledTimes(1);
   });
 
   it('does not start the team if seeding a role mode fails', async () => {
@@ -203,9 +300,7 @@ describe('team role permission enforcement', () => {
       ensureSession,
     });
 
-    await expect(
-      enforceTeamRolePermissionModesWithDeps(team, [qaAssignment], d)
-    ).rejects.toThrow('seed failed');
+    await expect(enforceTeamRolePermissionModesWithDeps(team, [qaAssignment], d)).rejects.toThrow('seed failed');
 
     expect(ensureSession).not.toHaveBeenCalled();
   });

@@ -20,6 +20,19 @@ export type TeamRolePermissionMode = 'plan' | 'bypassPermissions';
 
 export const MANAGED_TEAM_ROLE_ROUTING_MARKER = '[Managed Team Role Routing v1]';
 
+/**
+ * Managed role routing v1 is currently proven end-to-end only on Claude's
+ * injected direct-CLI delivery path. Other assistants remain valid Team
+ * members in the General specialty until their routing path has equivalent
+ * runtime coverage.
+ */
+export const MANAGED_TEAM_ROLE_SUPPORTED_BACKENDS = new Set(['claude']);
+
+export function supportsManagedTeamRoleBackend(backend?: string): boolean {
+  const normalized = backend?.trim().toLowerCase();
+  return Boolean(normalized && MANAGED_TEAM_ROLE_SUPPORTED_BACKENDS.has(normalized));
+}
+
 type TeamRoleProfile = {
   label: string;
   description: string;
@@ -235,6 +248,21 @@ export function teamRoleAssistantId(baseAssistantId: string, specialty: Provisio
   return `team-role:${baseAssistantId}:${specialty}`;
 }
 
+export function parseTeamRoleAssistantId(assistantId: string): EnsureTeamRoleAssistantInput | null {
+  const prefix = 'team-role:';
+  if (!assistantId.startsWith(prefix)) return null;
+
+  const payload = assistantId.slice(prefix.length);
+  const separator = payload.lastIndexOf(':');
+  if (separator <= 0 || separator === payload.length - 1) return null;
+
+  const baseAssistantId = payload.slice(0, separator);
+  const specialty = payload.slice(separator + 1) as ProvisionableTeamMemberSpecialty;
+  if (!Object.prototype.hasOwnProperty.call(TEAM_ROLE_PROFILES, specialty)) return null;
+
+  return { baseAssistantId, specialty };
+}
+
 export function resolveTeamRoleSkills(
   specialty: ProvisionableTeamMemberSpecialty,
   availableSkills: SkillInfo[],
@@ -260,11 +288,7 @@ export function resolveTeamRoleDisabledAutoInjectSkills(
   const allowedNames = new Set(teamRoleAllowedSkillNames(specialty));
 
   return availableSkills
-    .filter(
-      (skill) =>
-        skill.is_auto_inject &&
-        !allowedNames.has(skill.name)
-    )
+    .filter((skill) => skill.is_auto_inject && !allowedNames.has(skill.name))
     .map((skill) => skill.name)
     .sort();
 }
@@ -301,9 +325,7 @@ export async function ensureTeamRoleSkills(
   }
 
   if (missing.length) {
-    throw new Error(
-      `Managed Team role skills are unavailable for ${specialty}: ${missing.join(', ')}`
-    );
+    throw new Error(`Managed Team role skills are unavailable for ${specialty}: ${missing.join(', ')}`);
   }
 
   return resolveTeamRoleSkills(specialty, availableSkills);
@@ -373,10 +395,15 @@ export async function provisionTeamRoleAssistant(
 
   const profile = TEAM_ROLE_PROFILES[input.specialty];
   const roleAssistantId = teamRoleAssistantId(base.id, input.specialty);
-  const [baseDetail, availableSkills] = await Promise.all([
-    deps.getAssistant(base.id),
-    deps.listAvailableSkills(),
-  ]);
+  const [baseDetail, availableSkills] = await Promise.all([deps.getAssistant(base.id), deps.listAvailableSkills()]);
+
+  const baseAgent = baseDetail.engine.agent ?? base.agent;
+  const baseBackend = baseAgent?.acp_backend || baseAgent?.type;
+  if (baseBackend && !supportsManagedTeamRoleBackend(baseBackend)) {
+    throw new Error(
+      `Managed Team role profiles currently require the Claude backend; got ${baseBackend} for ${base.id}`
+    );
+  }
 
   const matchedSkills = await ensureTeamRoleSkills(input.specialty, {
     listAvailableSkills: async () => availableSkills,
@@ -385,17 +412,12 @@ export async function provisionTeamRoleAssistant(
   // base-assistant skills: that is how unrelated office/presentation skills can
   // leak into PM/Dev/QA profiles.
   const skillNames = matchedSkills.map((skill) => skill.name);
-  const customSkillNames = matchedSkills
-    .filter((skill) => skill.is_custom)
-    .map((skill) => skill.name);
+  const customSkillNames = matchedSkills.filter((skill) => skill.is_custom).map((skill) => skill.name);
   // Managed Team roles are capability-isolated. AionCore interprets this
   // legacy-named field as the exclusion set for auto-injected skills.
   // Disable every automatic capability outside the role's explicit policy
   // instead of inheriting the base assistant's usually-empty exclusion list.
-  const disabledBuiltinSkills = resolveTeamRoleDisabledAutoInjectSkills(
-    input.specialty,
-    availableSkills
-  );
+  const disabledBuiltinSkills = resolveTeamRoleDisabledAutoInjectSkills(input.specialty, availableSkills);
   const name = `${base.name} ${profile.label}`;
   const description = `[Team Role Profile v3 / pinned curated skills] ${profile.description}`;
   const defaults = cloneBaseDefaults(baseDetail, skillNames, profile.permissionMode);
@@ -429,10 +451,7 @@ export async function provisionTeamRoleAssistant(
     });
   }
 
-  await deps.writeAssistantRule(
-    roleAssistantId,
-    `${MANAGED_TEAM_ROLE_ROUTING_MARKER}\n${profile.rules}`
-  );
+  await deps.writeAssistantRule(roleAssistantId, `${MANAGED_TEAM_ROLE_ROUTING_MARKER}\n${profile.rules}`);
   if (!roleAssistant.enabled) {
     await deps.setAssistantState(roleAssistantId, true);
     roleAssistant = { ...roleAssistant, enabled: true };

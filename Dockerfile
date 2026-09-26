@@ -177,6 +177,7 @@ RUN cmp \
 # surface. Gate both in the reproducible image build so non-frontend roles cannot
 # silently lose routing again while the renderer card still passes.
 RUN bunx vitest run --project node tests/unit/teamRoleProfiles.test.ts
+RUN bunx vitest run --project node tests/unit/teamRolePermissions.test.ts
 RUN bunx vitest run --project dom tests/unit/renderer/messageTipsManagedSkillRouting.dom.test.tsx
 
 # Renderer SPA → out/renderer (consumed by pack-web-cli.js as static/).

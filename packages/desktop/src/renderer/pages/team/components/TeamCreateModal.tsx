@@ -25,6 +25,7 @@ import {
 import {
   ensureTeamDynamicRoleAssistants,
   ensureTeamRoleAssistant,
+  supportsManagedTeamRoleBackend,
   TEAM_ROLE_PROFILES,
 } from './memberPicker/teamRoleProfiles';
 import { enforceTeamRolePermissionModes } from './memberPicker/teamRolePermissions';
@@ -73,9 +74,7 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
   };
 
   const handleSelectAssistant = (assistant: TeamAssistantOption) => {
-    const existingNames = selectedMembers.map((member) =>
-      composeTeamMemberName(member.memberName, member.specialty)
-    );
+    const existingNames = selectedMembers.map((member) => composeTeamMemberName(member.memberName, member.specialty));
     const draft: TeamMemberDraft = {
       selectionId: `${assistant.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       assistant,
@@ -118,13 +117,21 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
       return;
     }
 
-    const memberNames = selectedMembers.map((member) =>
-      composeTeamMemberName(member.memberName, member.specialty)
+    const unsupportedManagedRole = selectedMembers.find(
+      (member) => member.specialty !== 'general' && !supportsManagedTeamRoleBackend(member.assistant.backend)
     );
-    if (memberNames.some((memberName) => !memberName.trim())) {
+    if (unsupportedManagedRole) {
       Message.warning(
-        t('team.create.memberNameRequired', { defaultValue: 'Every team member needs a name.' })
+        t('team.create.managedRoleBackendUnsupported', {
+          defaultValue: `${unsupportedManagedRole.assistant.name}: managed Team specialties currently require Claude Code. Use General for this backend.`,
+        })
       );
+      return;
+    }
+
+    const memberNames = selectedMembers.map((member) => composeTeamMemberName(member.memberName, member.specialty));
+    if (memberNames.some((memberName) => !memberName.trim())) {
+      Message.warning(t('team.create.memberNameRequired', { defaultValue: 'Every team member needs a name.' }));
       return;
     }
     const duplicateNames = duplicateTeamMemberNames(memberNames);

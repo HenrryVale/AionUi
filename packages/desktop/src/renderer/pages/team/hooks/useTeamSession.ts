@@ -20,6 +20,10 @@ import useSWR from 'swr';
 import { revalidateAcpConfigOptions } from '@/renderer/hooks/agent/useAcpConfigOptions';
 import { getConversationOrNull } from '@/renderer/pages/conversation/utils/conversationCache';
 import { removeTeamAssistantWithCronCleanup } from '../utils/removeTeamAssistantWithCronCleanup';
+import { ensureTeamRoleAssistant } from '../components/memberPicker/teamRoleProfiles';
+import { enforceTeamRolePermissionModeForMember } from '../components/memberPicker/teamRolePermissions';
+import { addTeamAssistantWithRolePolicy } from '../components/memberPicker/teamRoleMemberLifecycle';
+import { resolveDefaultTeamAgentModel } from '../components/teamCreateModelResolver';
 import {
   applyTeamRuntimeStatusToMembershipMutationState,
   applyTeamSessionStatusToMembershipMutationState,
@@ -128,11 +132,23 @@ export function useTeamSession(team: TTeam, warmupPhase?: TeamWarmupPhase) {
   }, [team.id, mutateTeam]);
 
   const addAssistant = useCallback(
-    async (assistant: TeamAssistantInput): Promise<TeamAssistant> => {
-      const created = await ipcBridge.team.addAgent.invoke({ team_id: team.id, assistant });
-      await mutateTeam();
-      return created;
-    },
+    async (assistant: TeamAssistantInput): Promise<TeamAssistant> =>
+      addTeamAssistantWithRolePolicy(team.id, assistant, {
+        ensureRoleAssistant: ensureTeamRoleAssistant,
+        addAgent: (resolvedAssistant) =>
+          ipcBridge.team.addAgent.invoke({
+            team_id: team.id,
+            assistant: resolvedAssistant,
+          }),
+        enforceRoleMode: enforceTeamRolePermissionModeForMember,
+        resolveRoleModel: (assistantId) => resolveDefaultTeamAgentModel({ assistant_id: assistantId }),
+        removeAgent: (slotId) =>
+          ipcBridge.team.removeAgent.invoke({
+            team_id: team.id,
+            slot_id: slotId,
+          }),
+        mutateTeam,
+      }),
     [team.id, mutateTeam]
   );
 
