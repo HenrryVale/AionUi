@@ -272,3 +272,24 @@ because the container image changed. Runtime canaries must therefore use a newly
 provisioned/re-provisioned role assistant. A separate reconciliation/migration
 path is required before claiming transparent upgrade behavior for existing Team
 members.
+
+
+### Backend support boundary
+
+Managed Team role routing v1 is currently exposed only for the Claude backend.
+The pinned AionCore delivery table uses different mechanisms for other runtimes:
+Codex remains on protocol skill delivery, while AionRS uses a separate manager
+path. The current per-turn managed router and `MANAGED_SKILL_ROUTING` tip are
+therefore not equivalent across those backends.
+
+The Team creation UI now exposes only `General` for non-Claude assistants, and
+role provisioning rejects a known non-Claude base assistant. This is deliberate
+fail-closed product behavior: non-Claude assistants can still participate in
+Teams, but they are not labeled PM/Backend/QA/etc. with guarantees that their
+runtime does not yet implement. Support can be widened later only after that
+backend has equivalent routing, permission and UI-card coverage.
+
+When an existing generated `team-role:*` profile is added to a Team, the
+profile is re-provisioned before the member is created. Its model is then
+re-resolved from the reconciled assistant, preventing a stale persisted model
+default from surviving while marker, skills and permissions are refreshed.
