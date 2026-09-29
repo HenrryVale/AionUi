@@ -167,6 +167,10 @@ RUN --mount=type=secret,id=gh_token,required=true \
 
 COPY . .
 
+# Capability isolation is security-sensitive and independent from renderer
+# tests. Exercise the runtime hook directly with Node before packaging.
+RUN node --test scripts/runtime/claude-readonly-role-guard.test.mjs
+
 # The application vendors the exact role-policy snapshot used by TypeScript.
 # Fail the image build if it drifts from the pinned skill-design commit.
 RUN cmp \
@@ -253,11 +257,12 @@ ENV AIONUI_MANAGED_SKILL_ROUTER=/app/team-skill-policy/${SKILL_DESIGN_COMMIT}/ro
 RUN test -s "$AIONUI_MANAGED_SKILL_ROUTER" \
     && test -s "$AIONUI_MANAGED_SKILL_MAP"
 
-# Claude QA capability wall. The hook and managed policy are baked outside HOME,
-# root-owned, and become immutable at runtime because production runs with a
-# read-only root filesystem. This is intentionally independent from Claude's
-# permission mode: QA remains plan-mode as defence in depth, while PreToolUse
-# enforces the closed capability surface before any tool execution.
+# Claude read-only role capability wall (QA/Security/Architect/Reviewer). The
+# hook and managed policy are baked outside HOME, root-owned, and become
+# immutable at runtime because production runs with a read-only root filesystem.
+# This is intentionally independent from Claude's permission mode: the guarded
+# roles remain plan-mode as defence in depth, while PreToolUse enforces the
+# closed capability surface before any tool execution.
 COPY --from=builder /app/scripts/runtime/claude-qa-guard.mjs /app/claude-qa-guard.mjs
 RUN install -d -o root -g root -m 0755 /etc/claude-code
 COPY --from=builder /app/scripts/runtime/claude-managed-settings.json /etc/claude-code/managed-settings.json
