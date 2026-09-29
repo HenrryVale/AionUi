@@ -3,11 +3,8 @@ import { Button, Input, Select } from '@arco-design/web-react';
 import { CloseSmall, Crown } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
 import { AssistantOptionLabel, type TeamAssistantOption } from '../assistantSelectUtils';
-import {
-  composeTeamMemberName,
-  TEAM_MEMBER_SPECIALTIES,
-  type TeamMemberSpecialty,
-} from './teamMemberIdentity';
+import { composeTeamMemberName, TEAM_MEMBER_SPECIALTIES, type TeamMemberSpecialty } from './teamMemberIdentity';
+import { supportsManagedTeamRoleBackend } from './teamRoleProfiles';
 
 export type TeamMemberDraft = {
   selectionId: string;
@@ -21,10 +18,7 @@ type Props = {
   leaderSelectionId?: string;
   onLeaderChange: (selectionId: string) => void;
   onRemove: (selectionId: string) => void;
-  onUpdate: (
-    selectionId: string,
-    patch: Partial<Pick<TeamMemberDraft, 'memberName' | 'specialty'>>
-  ) => void;
+  onUpdate: (selectionId: string, patch: Partial<Pick<TeamMemberDraft, 'memberName' | 'specialty'>>) => void;
   /**
    * 可选的标题行操作区，渲染在“已选成员 N”标题右侧、替换默认的 Leader 图例。
    * 窄屏用它承载“添加成员”按钮，避免另起一行重复渲染标题。
@@ -100,6 +94,9 @@ const TeamMemberDraftList: React.FC<Props> = ({
               ? t('team.create.currentLeader', { defaultValue: 'Current Leader' })
               : t('team.create.setAsLeader', { defaultValue: 'Set as Leader' });
             const resolvedName = composeTeamMemberName(member.memberName, member.specialty);
+            const specialtyOptions = supportsManagedTeamRoleBackend(member.assistant.backend)
+              ? TEAM_MEMBER_SPECIALTIES
+              : TEAM_MEMBER_SPECIALTIES.filter((option) => option.value === 'general');
 
             return (
               <div
@@ -152,7 +149,7 @@ const TeamMemberDraftList: React.FC<Props> = ({
                     onChange={(specialty) =>
                       onUpdate(member.selectionId, { specialty: specialty as TeamMemberSpecialty })
                     }
-                    options={TEAM_MEMBER_SPECIALTIES.map((option) => ({
+                    options={specialtyOptions.map((option) => ({
                       value: option.value,
                       label: option.label,
                     }))}

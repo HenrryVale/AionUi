@@ -193,3 +193,103 @@ machine-readable marker cannot silently disappear while the renderer routing
 card test continues to pass.
 
 A2 Backend remains pending until the marker-based routing change is rebuilt and proven in a fresh runtime canary. The power-loss interrupted runtime log collection; the repository-level activation defect is independently demonstrated by source inspection and regression coverage, but the fix is not yet claimed as runtime PASS.
+
+## Cross-profile validation
+
+Expanding the A2 fix to every managed Team role exposed a second systemic edge case.
+Once the marker activates managed routing for all roles, a legitimate task that has
+no matching managed skill route must not abort the model turn. Examples include a
+normal PM coordination turn, a generic architecture design request, or a Backend
+feature implementation that is neither debugging nor security work.
+
+The runtime therefore distinguishes two cases:
+
+- **No managed route applies:** continue the Team turn normally and inject no
+  per-turn managed skill card.
+- **A managed route applies but violates the role allowlist, provenance, bundle
+  root, required gate, or skill-body contract:** fail closed as before.
+
+This keeps deterministic routing additive rather than making the curated skill
+pack a prerequisite for every possible responsibility of a Team role.
+
+Verification/completion language now maps to `ship.default`, allowing the three
+ship-only profiles to use their one curated capability without inventing support
+skills.
+
+Repository regression coverage now spans every profile family:
+
+| Profile | Curated surface | Representative managed route |
+| --- | --- | --- |
+| PM | `ship-gate` | `ship.default -> ship-gate` |
+| Architect | `security-gate`, `prompt-injection-gate`, `ship-gate` | `security.default` |
+| Backend | 5 skills | `debug.default -> debug-gate + test-first-gate` |
+| Frontend | 16 skills | `design.ux_audit -> ux-heuristics + refactoring-ui` |
+| Full Stack | 8 skills | `debug.default -> debug-gate + test-first-gate` |
+| QA | `ship-gate` | `ship.default -> ship-gate` |
+| Security | 3 skills | `security.default -> security-gate + prompt-injection-gate + ship-gate` |
+| DevOps | 4 skills | `debug.default -> debug-gate`; unavailable test support is filtered |
+| Reviewer | `ship-gate` | `review.implementation` or `ship.default` |
+
+The provisioning unit test also provisions every role and asserts that each
+assistant receives exactly its pinned curated catalog plus the
+`[Managed Team Role Routing v1]` marker. The renderer test covers both A2's
+two-skill card and a ship-only one-skill card, ensuring the UI does not invent
+support skills or gates.
+
+
+### Role-policy applicability
+
+Cross-profile task-matrix review found that classification can legitimately select a
+route or mandatory gate that is outside a narrower role catalog. For example:
+
+- QA/Reviewer/PM can receive verification or review tasks whose subject mentions
+  authentication or a bug even though those roles intentionally expose only
+  `ship-gate`;
+- Frontend can receive a generic debugging request even though `debug-gate` is
+  not in the Frontend catalog;
+- DevOps can receive an implementation/debugging request whose global
+  `behavior_change` gate is `test-first-gate`, which is intentionally absent
+  from the current DevOps catalog.
+
+Those are policy applicability mismatches, not bundle-integrity failures. The
+direct runtime now treats three outcomes as **no managed route for this role**:
+unclassified task, primary outside the role allowlist, or mandatory gate outside
+the role allowlist. The model turn continues with the role's fixed rules and
+capability snapshot, and no per-turn routing card is emitted.
+
+The strict lower-level router still reports those cases as errors so policy tests
+can detect them. Integrity failures remain fatal at runtime: malformed/missing
+router YAML, invalid managed source provenance/root, missing selected skill
+source, unreadable or empty selected skill body, and related bundle corruption
+still fail closed.
+
+### Upgrade caveat for persisted role assistants
+
+The routing marker is persisted in the generated `team-role:*` assistant rule.
+New provisioning and re-provisioning writes the marker, but an already persisted
+role assistant created by an older image is not retroactively rewritten merely
+because the container image changed. Runtime canaries must therefore use a newly
+provisioned/re-provisioned role assistant. A separate reconciliation/migration
+path is required before claiming transparent upgrade behavior for existing Team
+members.
+
+
+### Backend support boundary
+
+Managed Team role routing v1 is currently exposed only for the Claude backend.
+The pinned AionCore delivery table uses different mechanisms for other runtimes:
+Codex remains on protocol skill delivery, while AionRS uses a separate manager
+path. The current per-turn managed router and `MANAGED_SKILL_ROUTING` tip are
+therefore not equivalent across those backends.
+
+The Team creation UI now exposes only `General` for non-Claude assistants, and
+role provisioning rejects a known non-Claude base assistant. This is deliberate
+fail-closed product behavior: non-Claude assistants can still participate in
+Teams, but they are not labeled PM/Backend/QA/etc. with guarantees that their
+runtime does not yet implement. Support can be widened later only after that
+backend has equivalent routing, permission and UI-card coverage.
+
+When an existing generated `team-role:*` profile is added to a Team, the
+profile is re-provisioned before the member is created. Its model is then
+re-resolved from the reconciled assistant, preventing a stale persisted model
+default from surviving while marker, skills and permissions are refreshed.

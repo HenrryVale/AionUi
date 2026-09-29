@@ -36,6 +36,7 @@ tests/*
 !tests/unit/
 tests/unit/*
 !tests/unit/teamRoleProfiles.test.ts
+!tests/unit/teamRolePermissions.test.ts
 !tests/unit/renderer/
 tests/unit/renderer/*
 !tests/unit/renderer/messageTipsManagedSkillRouting.dom.test.tsx

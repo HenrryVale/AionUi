@@ -8,13 +8,39 @@ const TEAM_MCP_PREFIX = 'mcp__aionui-team__';
 const QA_ASSISTANT_SUFFIX = ':qa';
 const PM_ASSISTANT_SUFFIX = ':pm';
 
-const QA_LOCAL_READ_TOOLS = new Set(['Read', 'Glob', 'Grep']);
-const QA_TEAM_READ_TOOLS = new Set([
+const READ_ONLY_ROLE_LABELS = Object.freeze({
+  qa: 'QA',
+  security: 'Security',
+  architect: 'Architect',
+  reviewer: 'Reviewer',
+});
+
+const READ_ONLY_LOCAL_READ_TOOLS = new Set(['Read', 'Glob', 'Grep']);
+const READ_ONLY_TEAM_READ_TOOLS = new Set([
   'team_members',
   'team_read_messages',
   'team_task_list',
 ]);
-const QA_TASK_STATUSES = new Set(['in_progress', 'completed']);
+const READ_ONLY_TASK_STATUSES = new Set(['in_progress', 'completed']);
+const READ_ONLY_TEAM_DISCOVERABLE_TOOLS = new Set([
+  ...READ_ONLY_TEAM_READ_TOOLS,
+  'team_send_message',
+  'team_task_update',
+]);
+
+export function readOnlyRoleFromAssistantId(assistantId) {
+  if (typeof assistantId !== 'string') return null;
+
+  for (const role of Object.keys(READ_ONLY_ROLE_LABELS)) {
+    if (assistantId.endsWith(`:${role}`)) return role;
+  }
+
+  return null;
+}
+
+function guardRoleLabel(identity) {
+  return READ_ONLY_ROLE_LABELS[identity?.guardRole] ?? 'Read-only role';
+}
 
 function pass(reason = 'allowed') {
   return { decision: 'pass', reason };
@@ -49,15 +75,17 @@ function hasPathTraversalPattern(value) {
   return value.split(/[\\/]+/).includes('..');
 }
 
-function localReadPath(toolName, toolInput, cwd) {
+function localReadPath(toolName, toolInput, cwd, identity) {
+  const roleLabel = guardRoleLabel(identity);
+
   if (toolName === 'Read') {
     const filePath = toolInput?.file_path ?? toolInput?.path;
     if (typeof filePath !== 'string' || filePath.trim() === '') {
-      return deny('QA guard: Read requires a concrete file_path inside the assigned workspace.');
+      return deny(`${roleLabel} guard: Read requires a concrete file_path inside the assigned workspace.`);
     }
     return pathIsInsideWorkspace(cwd, filePath)
-      ? pass('QA read inside workspace')
-      : deny('QA guard: reading outside the assigned workspace is not allowed.');
+      ? pass(`${roleLabel} read inside workspace`)
+      : deny(`${roleLabel} guard: reading outside the assigned workspace is not allowed.`);
   }
 
   if (toolName === 'Glob' || toolName === 'Grep') {
@@ -68,21 +96,21 @@ function localReadPath(toolName, toolInput, cwd) {
     ].filter((value) => typeof value === 'string');
 
     if (patterns.some(hasPathTraversalPattern)) {
-      return deny('QA guard: absolute or parent-traversing search patterns are not allowed.');
+      return deny(`${roleLabel} guard: absolute or parent-traversing search patterns are not allowed.`);
     }
 
     if (searchRoot == null || searchRoot === '') {
-      return pass('QA search defaults to assigned workspace');
+      return pass(`${roleLabel} search defaults to assigned workspace`);
     }
     if (typeof searchRoot !== 'string') {
-      return deny(`QA guard: ${toolName} path must be a string inside the assigned workspace.`);
+      return deny(`${roleLabel} guard: ${toolName} path must be a string inside the assigned workspace.`);
     }
     return pathIsInsideWorkspace(cwd, searchRoot)
-      ? pass('QA search inside workspace')
-      : deny('QA guard: searching outside the assigned workspace is not allowed.');
+      ? pass(`${roleLabel} search inside workspace`)
+      : deny(`${roleLabel} guard: searching outside the assigned workspace is not allowed.`);
   }
 
-  return deny(`QA guard: local tool ${toolName} is outside the QA read-only capability set.`);
+  return deny(`${roleLabel} guard: local tool ${toolName} is outside the read-only capability set.`);
 }
 
 function teamToolName(toolName) {
@@ -92,6 +120,52 @@ function teamToolName(toolName) {
 function onlyKeys(object, allowed) {
   if (!object || typeof object !== 'object' || Array.isArray(object)) return false;
   return Object.keys(object).every((key) => allowed.has(key));
+}
+
+function evaluateReadOnlyToolSearch(toolInput, identity) {
+  const roleLabel = guardRoleLabel(identity);
+  const allowedKeys = new Set(['query', 'max_results']);
+
+  if (!onlyKeys(toolInput, allowedKeys)) {
+    return deny(`${roleLabel} guard: ToolSearch accepts only query and max_results.`);
+  }
+
+  const query = toolInput?.query;
+  if (typeof query !== 'string' || !query.startsWith('select:')) {
+    return deny(
+      `${roleLabel} guard: ToolSearch is limited to exact select: loading of approved AionUI Team tools.`
+    );
+  }
+
+  if (
+    toolInput?.max_results != null &&
+    (!Number.isInteger(toolInput.max_results) ||
+      toolInput.max_results < 1 ||
+      toolInput.max_results > 20)
+  ) {
+    return deny(`${roleLabel} guard: ToolSearch max_results must be an integer from 1 to 20.`);
+  }
+
+  const requestedTools = query
+    .slice('select:'.length)
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean);
+
+  if (requestedTools.length === 0) {
+    return deny(`${roleLabel} guard: ToolSearch select: query must name at least one approved Team tool.`);
+  }
+
+  for (const requestedTool of requestedTools) {
+    const teamTool = teamToolName(requestedTool);
+    if (!teamTool || !READ_ONLY_TEAM_DISCOVERABLE_TOOLS.has(teamTool)) {
+      return deny(
+        `${roleLabel} guard: ToolSearch may load only approved AionUI Team tools; denied ${requestedTool}.`
+      );
+    }
+  }
+
+  return pass(`${roleLabel} may load approved Team tools through exact ToolSearch select:`);
 }
 
 export function evaluatePmDependencyHandoff({ toolName, toolInput = {}, identity }) {
@@ -126,32 +200,38 @@ export function evaluateQaTool({
   identity,
   getTaskOwner = () => null,
 }) {
-  if (!identity?.enforce) return pass('not a QA-guarded session');
+  if (!identity?.enforce) return pass('not a read-only-role-guarded session');
+
+  const roleLabel = guardRoleLabel(identity);
 
   if (typeof toolName !== 'string' || toolName.trim() === '') {
-    return deny('QA guard: missing tool identity; fail closed.');
+    return deny(`${roleLabel} guard: missing tool identity; fail closed.`);
   }
 
-  if (QA_LOCAL_READ_TOOLS.has(toolName)) {
-    return localReadPath(toolName, toolInput, cwd);
+  if (READ_ONLY_LOCAL_READ_TOOLS.has(toolName)) {
+    return localReadPath(toolName, toolInput, cwd, identity);
+  }
+
+  if (toolName === 'ToolSearch') {
+    return evaluateReadOnlyToolSearch(toolInput, identity);
   }
 
   const teamTool = teamToolName(toolName);
   if (teamTool) {
-    if (QA_TEAM_READ_TOOLS.has(teamTool)) {
-      return pass(`QA Team read tool allowed: ${teamTool}`);
+    if (READ_ONLY_TEAM_READ_TOOLS.has(teamTool)) {
+      return pass(`${roleLabel} Team read tool allowed: ${teamTool}`);
     }
 
     if (teamTool === 'team_send_message') {
       const allowedKeys = new Set(['to', 'message', 'files']);
       if (!onlyKeys(toolInput, allowedKeys)) {
-        return deny('QA guard: Team messages may contain only to, message and workspace-scoped files.');
+        return deny(`${roleLabel} guard: Team messages may contain only to, message and workspace-scoped files.`);
       }
       if (!identity.leadSlotId) {
-        return deny('QA guard: Team lead identity is unavailable; message routing fails closed.');
+        return deny(`${roleLabel} guard: Team lead identity is unavailable; message routing fails closed.`);
       }
       if (toolInput?.to !== identity.leadSlotId) {
-        return deny('QA guard: QA may send Team messages only to the lead; broadcast or peer messaging is denied.');
+        return deny(`${roleLabel} guard: read-only roles may send Team messages only to the lead; broadcast or peer messaging is denied.`);
       }
 
       if (toolInput?.files != null) {
@@ -161,43 +241,43 @@ export function evaluateQaTool({
             (file) => typeof file !== 'string' || !pathIsInsideWorkspace(cwd, file)
           )
         ) {
-          return deny('QA guard: Team message attachments must stay inside the assigned workspace.');
+          return deny(`${roleLabel} guard: Team message attachments must stay inside the assigned workspace.`);
         }
       }
 
-      return pass('QA may report evidence to the Team lead');
+      return pass(`${roleLabel} may report evidence to the Team lead`);
     }
 
     if (teamTool === 'team_task_update') {
       const allowedKeys = new Set(['task_id', 'status']);
       if (!onlyKeys(toolInput, allowedKeys)) {
-        return deny('QA guard: task updates may change only QA task status.');
+        return deny(`${roleLabel} guard: task updates may change only the role's own task status.`);
       }
 
       const taskId = toolInput?.task_id;
       const status = toolInput?.status;
-      if (typeof taskId !== 'string' || !QA_TASK_STATUSES.has(status)) {
-        return deny('QA guard: task update requires QA-owned task_id and status in_progress/completed.');
+      if (typeof taskId !== 'string' || !READ_ONLY_TASK_STATUSES.has(status)) {
+        return deny(`${roleLabel} guard: task update requires an owned task_id and status in_progress/completed.`);
       }
 
       let owner = null;
       try {
         owner = getTaskOwner(taskId);
       } catch {
-        return deny('QA guard: task ownership could not be verified; fail closed.');
+        return deny(`${roleLabel} guard: task ownership could not be verified; fail closed.`);
       }
 
       if (!identity.slotId || owner !== identity.slotId) {
-        return deny('QA guard: QA may update only its own assigned task.');
+        return deny(`${roleLabel} guard: a read-only role may update only its own assigned task.`);
       }
 
-      return pass('QA may update only its own task lifecycle status');
+      return pass(`${roleLabel} may update only its own task lifecycle status`);
     }
 
-    return deny(`QA guard: Team tool ${teamTool} is outside the QA coordination capability set.`);
+    return deny(`${roleLabel} guard: Team tool ${teamTool} is outside the read-only coordination capability set.`);
   }
 
-  return deny(`QA guard: tool ${toolName} is denied. QA is read-only and may not execute, mutate, delegate, or bypass the capability wall.`);
+  return deny(`${roleLabel} guard: tool ${toolName} is denied. This role is read-only and may not execute, mutate, delegate, or bypass the capability wall.`);
 }
 
 function parseAgents(raw) {
@@ -209,7 +289,7 @@ function parseAgents(raw) {
   }
 }
 
-function resolveQaIdentity(db, sessionId, permissionMode) {
+export function resolveReadOnlyRoleIdentity(db, sessionId, permissionMode) {
   let conversationId = null;
   let assistantId = null;
 
@@ -257,22 +337,24 @@ function resolveQaIdentity(db, sessionId, permissionMode) {
     }
   }
 
-  const knownQa = typeof assistantId === 'string' && assistantId.endsWith(QA_ASSISTANT_SUFFIX);
+  const guardRole = readOnlyRoleFromAssistantId(assistantId);
+  const knownReadOnlyRole = guardRole != null;
   const knownPm = typeof assistantId === 'string' && assistantId.endsWith(PM_ASSISTANT_SUFFIX);
-  const knownNonQa = typeof assistantId === 'string' && !knownQa;
+  const knownNonReadOnlyRole = typeof assistantId === 'string' && !knownReadOnlyRole;
   const planFallback = !assistantId && permissionMode === 'plan';
 
   return {
-    enforce: knownQa || planFallback,
+    enforce: knownReadOnlyRole || planFallback,
+    guardRole: guardRole ?? (planFallback ? 'plan' : null),
     isPm: knownPm,
-    identitySource: knownQa
-      ? 'assistant-id'
+    identitySource: knownReadOnlyRole
+      ? `${guardRole}-assistant-id`
       : knownPm
         ? 'pm-assistant-id'
         : planFallback
           ? 'plan-fallback'
-          : knownNonQa
-            ? 'non-qa'
+          : knownNonReadOnlyRole
+            ? 'non-read-only-role'
             : 'unknown',
     assistantId,
     conversationId,
@@ -347,12 +429,13 @@ export async function main({
   try {
     const { DatabaseSync } = await import('node:sqlite');
     db = new DatabaseSync(dbPath, { readOnly: true });
-    identity = resolveQaIdentity(db, sessionId, permissionMode);
+    identity = resolveReadOnlyRoleIdentity(db, sessionId, permissionMode);
   } catch {
     // If identity lookup fails while Claude itself reports plan mode, fail closed
     // for that restrictive session. Non-plan sessions remain unaffected.
     identity = {
       enforce: permissionMode === 'plan',
+      guardRole: permissionMode === 'plan' ? 'plan' : null,
       identitySource: permissionMode === 'plan' ? 'plan-fallback-db-error' : 'unknown-db-error',
       assistantId: null,
       conversationId: null,

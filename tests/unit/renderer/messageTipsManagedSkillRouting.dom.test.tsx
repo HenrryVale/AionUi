@@ -60,6 +60,24 @@ const A1_PARAMS = {
   loaded_skills: ['ux-heuristics', 'refactoring-ui'],
 };
 
+const A2_BACKEND_PARAMS = {
+  task_class: 'debug',
+  route: 'debug.default',
+  primary: 'debug-gate',
+  supports: ['test-first-gate'],
+  gates: [],
+  loaded_skills: ['debug-gate', 'test-first-gate'],
+};
+
+const SHIP_ONLY_PARAMS = {
+  task_class: 'verification',
+  route: 'ship.default',
+  primary: 'ship-gate',
+  supports: [],
+  gates: [],
+  loaded_skills: ['ship-gate'],
+};
+
 describe('MessageTips — managed skill routing visibility', () => {
   afterEach(() => {
     cleanup();
@@ -85,6 +103,28 @@ describe('MessageTips — managed skill routing visibility', () => {
     expect(screen.getByTestId('managed-skill-routing-primary')).toHaveTextContent('Primary · ux-heuristics');
     expect(screen.getByTestId('managed-skill-routing-support')).toHaveTextContent('Support · refactoring-ui');
     expect(screen.getByTestId('managed-skill-routing-task-class')).toHaveTextContent('ux_audit');
+    expect(screen.queryByTestId('managed-skill-routing-gate')).not.toBeInTheDocument();
+  });
+
+  it('renders the A2 Backend route without requiring skill-design', () => {
+    render(<MessageTips message={buildRoutingTip(A2_BACKEND_PARAMS)} />);
+
+    expect(screen.getByTestId('managed-skill-routing')).toBeInTheDocument();
+    expect(screen.getByTestId('managed-skill-routing-count')).toHaveTextContent('Loaded Skills (2)');
+    expect(screen.getByTestId('managed-skill-routing-route')).toHaveTextContent('debug.default');
+    expect(screen.getByTestId('managed-skill-routing-primary')).toHaveTextContent('Primary · debug-gate');
+    expect(screen.getByTestId('managed-skill-routing-support')).toHaveTextContent('Support · test-first-gate');
+    expect(screen.getByTestId('managed-skill-routing-task-class')).toHaveTextContent('debug');
+    expect(screen.queryByTestId('managed-skill-routing-gate')).not.toBeInTheDocument();
+  });
+
+  it('renders ship-only roles without inventing support skills or gates', () => {
+    render(<MessageTips message={buildRoutingTip(SHIP_ONLY_PARAMS)} />);
+
+    expect(screen.getByTestId('managed-skill-routing-count')).toHaveTextContent('Loaded Skills (1)');
+    expect(screen.getByTestId('managed-skill-routing-route')).toHaveTextContent('ship.default');
+    expect(screen.getByTestId('managed-skill-routing-primary')).toHaveTextContent('Primary · ship-gate');
+    expect(screen.queryByTestId('managed-skill-routing-support')).not.toBeInTheDocument();
     expect(screen.queryByTestId('managed-skill-routing-gate')).not.toBeInTheDocument();
   });
 
