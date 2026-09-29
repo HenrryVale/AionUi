@@ -234,7 +234,7 @@ function parseAgents(raw) {
   }
 }
 
-function resolveReadOnlyRoleIdentity(db, sessionId, permissionMode) {
+export function resolveReadOnlyRoleIdentity(db, sessionId, permissionMode) {
   let conversationId = null;
   let assistantId = null;
 

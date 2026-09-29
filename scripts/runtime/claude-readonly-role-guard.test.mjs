@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   evaluateQaTool,
   readOnlyRoleFromAssistantId,
+  resolveReadOnlyRoleIdentity,
 } from './claude-qa-guard.mjs';
 
 const WORKSPACE = '/workspace/project';
@@ -18,6 +19,73 @@ function identity(role, enforce = true) {
     leadSlotId: 'slot-pm',
   };
 }
+
+
+function fakeIdentityDb(assistantId) {
+  return {
+    prepare(sql) {
+      if (sql.includes('FROM acp_session')) {
+        return { get: () => ({ conversation_id: 'conv-role' }) };
+      }
+
+      if (sql.includes('FROM conversation_assistant_snapshots')) {
+        return { get: () => ({ assistant_id: assistantId }) };
+      }
+
+      if (sql.includes('FROM teams')) {
+        return {
+          all: () => [
+            {
+              id: 'team-1',
+              agents: JSON.stringify([
+                {
+                  slot_id: 'slot-pm',
+                  conversation_id: 'conv-pm',
+                  role: 'lead',
+                  assistant_id: 'team-role:bare:2d23ff1c:pm',
+                },
+                {
+                  slot_id: 'slot-role',
+                  conversation_id: 'conv-role',
+                  role: 'teammate',
+                  assistant_id: assistantId,
+                },
+              ]),
+            },
+          ],
+        };
+      }
+
+      throw new Error(`Unexpected SQL in fake DB: ${sql}`);
+    },
+  };
+}
+
+test('database identity resolution enforces only the four guarded roles', () => {
+  for (const role of GUARDED_ROLES) {
+    const resolved = resolveReadOnlyRoleIdentity(
+      fakeIdentityDb(`team-role:bare:2d23ff1c:${role}`),
+      'session-role',
+      'plan'
+    );
+
+    assert.equal(resolved.enforce, true);
+    assert.equal(resolved.guardRole, role);
+    assert.equal(resolved.identitySource, `${role}-assistant-id`);
+    assert.equal(resolved.slotId, 'slot-role');
+  }
+
+  for (const role of UNGUARDED_ROLES) {
+    const resolved = resolveReadOnlyRoleIdentity(
+      fakeIdentityDb(`team-role:bare:2d23ff1c:${role}`),
+      'session-role',
+      role === 'pm' ? 'bypassPermissions' : 'bypassPermissions'
+    );
+
+    assert.equal(resolved.enforce, false);
+    assert.equal(resolved.guardRole, null);
+  }
+});
 
 test('recognizes exactly the four read-only Team role suffixes', () => {
   for (const role of GUARDED_ROLES) {
