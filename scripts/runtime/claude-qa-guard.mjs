@@ -22,6 +22,11 @@ const READ_ONLY_TEAM_READ_TOOLS = new Set([
   'team_task_list',
 ]);
 const READ_ONLY_TASK_STATUSES = new Set(['in_progress', 'completed']);
+const READ_ONLY_TEAM_DISCOVERABLE_TOOLS = new Set([
+  ...READ_ONLY_TEAM_READ_TOOLS,
+  'team_send_message',
+  'team_task_update',
+]);
 
 export function readOnlyRoleFromAssistantId(assistantId) {
   if (typeof assistantId !== 'string') return null;
@@ -117,6 +122,52 @@ function onlyKeys(object, allowed) {
   return Object.keys(object).every((key) => allowed.has(key));
 }
 
+function evaluateReadOnlyToolSearch(toolInput, identity) {
+  const roleLabel = guardRoleLabel(identity);
+  const allowedKeys = new Set(['query', 'max_results']);
+
+  if (!onlyKeys(toolInput, allowedKeys)) {
+    return deny(`${roleLabel} guard: ToolSearch accepts only query and max_results.`);
+  }
+
+  const query = toolInput?.query;
+  if (typeof query !== 'string' || !query.startsWith('select:')) {
+    return deny(
+      `${roleLabel} guard: ToolSearch is limited to exact select: loading of approved AionUI Team tools.`
+    );
+  }
+
+  if (
+    toolInput?.max_results != null &&
+    (!Number.isInteger(toolInput.max_results) ||
+      toolInput.max_results < 1 ||
+      toolInput.max_results > 20)
+  ) {
+    return deny(`${roleLabel} guard: ToolSearch max_results must be an integer from 1 to 20.`);
+  }
+
+  const requestedTools = query
+    .slice('select:'.length)
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean);
+
+  if (requestedTools.length === 0) {
+    return deny(`${roleLabel} guard: ToolSearch select: query must name at least one approved Team tool.`);
+  }
+
+  for (const requestedTool of requestedTools) {
+    const teamTool = teamToolName(requestedTool);
+    if (!teamTool || !READ_ONLY_TEAM_DISCOVERABLE_TOOLS.has(teamTool)) {
+      return deny(
+        `${roleLabel} guard: ToolSearch may load only approved AionUI Team tools; denied ${requestedTool}.`
+      );
+    }
+  }
+
+  return pass(`${roleLabel} may load approved Team tools through exact ToolSearch select:`);
+}
+
 export function evaluatePmDependencyHandoff({ toolName, toolInput = {}, identity }) {
   if (!identity?.isPm) return pass('not a PM-managed dependency handoff');
 
@@ -159,6 +210,10 @@ export function evaluateQaTool({
 
   if (READ_ONLY_LOCAL_READ_TOOLS.has(toolName)) {
     return localReadPath(toolName, toolInput, cwd, identity);
+  }
+
+  if (toolName === 'ToolSearch') {
+    return evaluateReadOnlyToolSearch(toolInput, identity);
   }
 
   const teamTool = teamToolName(toolName);

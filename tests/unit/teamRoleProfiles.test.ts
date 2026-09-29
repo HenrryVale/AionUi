@@ -465,6 +465,9 @@ describe('team role profiles', () => {
       const profile = TEAM_ROLE_PROFILES[specialty];
       expect(profile.permissionMode).toBe('plan');
       expect(profile.rules).toContain('fail-closed read-only capability wall');
+      expect(profile.rules).toContain(
+        'ToolSearch is allowed only to load the approved AionUI Team tools with an exact select: query'
+      );
       expect(profile.rules).toContain('Never use Bash, Write, Edit, NotebookEdit, subagents');
       expect(profile.rules).toContain('Do not retry the action through another tool');
     }

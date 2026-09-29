@@ -141,6 +141,41 @@ for (const role of GUARDED_ROLES) {
     }
   });
 
+  test(`${role} ToolSearch loads only exact approved Team tools`, () => {
+    const guarded = identity(role);
+
+    assert.equal(
+      evaluateQaTool({
+        toolName: 'ToolSearch',
+        toolInput: {
+          query:
+            'select:mcp__aionui-team__team_members,mcp__aionui-team__team_read_messages,mcp__aionui-team__team_task_list,mcp__aionui-team__team_send_message,mcp__aionui-team__team_task_update',
+          max_results: 5,
+        },
+        cwd: WORKSPACE,
+        identity: guarded,
+      }).decision,
+      'pass'
+    );
+
+    for (const query of [
+      'select:mcp__aionui-team__team_members,ExitPlanMode',
+      'select:mcp__untrusted__write',
+      'team tools',
+    ]) {
+      assert.equal(
+        evaluateQaTool({
+          toolName: 'ToolSearch',
+          toolInput: { query },
+          cwd: WORKSPACE,
+          identity: guarded,
+        }).decision,
+        'deny',
+        `${role} unexpectedly allowed ToolSearch query: ${query}`
+      );
+    }
+  });
+
   test(`${role} may report to the lead but not message peers`, () => {
     const guarded = identity(role);
 
@@ -178,6 +213,17 @@ test('implementation roles and PM remain outside the read-only wall', () => {
       }).decision,
       'pass',
       `${role} was accidentally placed behind the read-only wall`
+    );
+
+    assert.equal(
+      evaluateQaTool({
+        toolName: 'ToolSearch',
+        toolInput: { query: 'select:ExitPlanMode' },
+        cwd: WORKSPACE,
+        identity: unguarded,
+      }).decision,
+      'pass',
+      `${role} ToolSearch was accidentally constrained by the read-only wall`
     );
   }
 });
