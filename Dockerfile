@@ -98,10 +98,11 @@ ARG SKILL_DESIGN_COMMIT
 
 WORKDIR /app
 
-# curl/tar/unzip are used by scripts/prepare-aioncore.js to fetch and unpack the
-# backend release asset; ca-certificates is required for the HTTPS download.
+# curl/wget/tar/unzip are used by scripts/prepare-aioncore.js to fetch and unpack
+# the backend release asset. wget is the explicit fallback when curl fails;
+# ca-certificates is required for the HTTPS download.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl gh git python3 tar unzip \
+    && apt-get install -y --no-install-recommends ca-certificates curl gh git python3 tar unzip wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Pinned so image builds stay reproducible (the workflow tracks bun latest).
