@@ -460,11 +460,14 @@ describe('team role profiles', () => {
     );
   });
 
-  it('keeps QA in plan mode and documents the fail-closed capability wall', () => {
-    expect(TEAM_ROLE_PROFILES.qa.permissionMode).toBe('plan');
-    expect(TEAM_ROLE_PROFILES.qa.rules).toContain('fail-closed capability wall');
-    expect(TEAM_ROLE_PROFILES.qa.rules).toContain('Never use Bash, Write, Edit, NotebookEdit, subagents');
-    expect(TEAM_ROLE_PROFILES.qa.rules).toContain('Do not retry the action through another tool');
+  it('keeps every read-only review role in plan mode with a fail-closed capability wall', () => {
+    for (const specialty of ['architect', 'qa', 'security', 'reviewer'] as const) {
+      const profile = TEAM_ROLE_PROFILES[specialty];
+      expect(profile.permissionMode).toBe('plan');
+      expect(profile.rules).toContain('fail-closed capability wall');
+      expect(profile.rules).toContain('Never use Bash, Write, Edit, NotebookEdit, subagents');
+      expect(profile.rules).toContain('Do not retry the action through another tool');
+    }
   });
 
   it('pins the curated skill policy to the audited skill-design snapshot', () => {
